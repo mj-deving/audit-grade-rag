@@ -1,24 +1,67 @@
+<div align="center">
+
 # Audit-Grade RAG
 
-Audit-Grade RAG is a TypeScript reference implementation for a self-hosted,
-single-organization RAG assistant. It focuses on traceable answers: every
-response has claim-level citations, an append-only signed audit row,
-deterministic replay checks, and a reproducible EU AI Act Article 50 report
-bundle.
+**Self-hosted RAG that can answer, cite, replay, and report every response.**
 
-The demo is intentionally local and deterministic. It gives operators a working
-German console without external analytics, third-party JavaScript, or live LLM
-credentials.
+[![CI](https://github.com/mj-deving/audit-grade-rag/actions/workflows/ci.yml/badge.svg?branch=goalmode/bootstrap-guardrails)](https://github.com/mj-deving/audit-grade-rag/actions/workflows/ci.yml)
+![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)
+![Node](https://img.shields.io/badge/Node-22-3c873a?logo=node.js&logoColor=white)
+![pnpm](https://img.shields.io/badge/pnpm-9-f69220?logo=pnpm&logoColor=white)
+![Replay](https://img.shields.io/badge/replay-drift_detecting-0f766e)
+![Audit](https://img.shields.io/badge/audit-ledger_signed-111827)
+![Analytics](https://img.shields.io/badge/analytics-none-b91c1c)
+
+[Five-minute install](#five-minute-install) · [Screenshots](#screenshots) · [Architecture](#architecture) · [Verification](#verification) · [Docs](#docs)
+
+</div>
+
+Audit-Grade RAG is a TypeScript reference implementation for organizations that
+need more than a chatbot UI. It treats every answer as an auditable event:
+retrieved evidence is captured, claims are citation-checked, ledger rows are
+hash-chained and signed, replay drift is named, and Article 50 report bundles
+are reproducible from local state.
+
+The demo runs locally with deterministic providers. No cloud credentials, no
+third-party JavaScript, and no analytics are needed to try the product surface.
 
 ## Screenshots
 
-Desktop operator console:
+<p align="center">
+  <img src="docs/assets/console-desktop.png" alt="Audit-Grade RAG desktop operator console" width="900">
+</p>
 
-![Audit-Grade RAG desktop console](docs/assets/console-desktop.png)
+<p align="center">
+  <img src="docs/assets/console-mobile.png" alt="Audit-Grade RAG mobile operator console" width="260">
+</p>
 
-Mobile operator console:
+## Why This Exists
 
-![Audit-Grade RAG mobile console](docs/assets/console-mobile.png)
+Most RAG demos optimize for the answer box. Regulated operators need the
+surrounding evidence:
+
+- What corpus snapshot was active?
+- Which chunks were retrieved?
+- Which claims were cited?
+- Which model, prompt, embedding profile, and seed were used?
+- Can the answer be replayed later?
+- Can the system produce a disclosure bundle without hand assembly?
+
+Audit-Grade RAG makes those questions first-class product behavior instead of
+after-the-fact logging.
+
+## What Makes It Audit-Grade
+
+| Capability | What ships in this repo |
+| --- | --- |
+| Cited answers | Claim parser and validator reject uncited or wrong-snapshot citations. |
+| Refusal path | Low-evidence retrieval refuses before calling the LLM provider. |
+| Append-only ledger | Every answered, refused, blocked, replayed, and reported event is hash-chained and signed. |
+| Replay | Replay checks corpus snapshot, prompt hash, embedding model, model profile, and provider capability. |
+| Drift reporting | Prompt, corpus, model artifact, cloud byte mismatch, and unsupported-provider states are named. |
+| Article 50 bundle | Deterministic JSON, PDF-shaped artifact, audit excerpt, and manifest hashes. |
+| Eval gate | Golden-set parser with groundedness, citation accuracy, refusal correctness, and per-tag breakdown. |
+| Operator UI | German console with CSP, keyboard-reachable controls, no external scripts, and no analytics. |
 
 ## Five-Minute Install
 
@@ -29,31 +72,43 @@ pnpm check:full
 pnpm dev
 ```
 
-Open `http://127.0.0.1:3000/console`.
+Open:
 
-The local demo bootstraps a demo operator, ingests `examples/demo-corpus`, runs a
-deterministic query, and renders the operator console with answer, citations,
-retrieved evidence, and audit status.
+```text
+http://127.0.0.1:3000/console
+```
 
-## What It Implements
+The dev server bootstraps a demo operator, ingests `examples/demo-corpus`, runs a
+deterministic query, and renders the console with answer, citation, evidence
+cards, and audit state.
 
-- Passwordless operator bootstrap and WebAuthn-shaped enrolled sessions.
-- PDF, DOCX, and Markdown fixture ingestion with OCR and hidden-text warnings.
-- Snapshot-aware retrieval with dense/BM25 scoring, RRF merge, top-K bounds, and
-  out-of-corpus refusal.
-- Cited generation with pinned prompt/model metadata, one retry, and blocked
-  uncited output handling.
-- Signed append-only audit ledger with hash-chain verification and sealed export.
-- Replay states for bit-equal pass, prompt/corpus/model drift, cloud byte
-  mismatch, and unsupported providers.
-- Golden-set eval with groundedness, citation accuracy, refusal correctness, and
-  per-tag breakdown.
-- Deterministic Article 50 report bundle with JSON, PDF-shaped text artifact,
-  audit excerpt, and manifest hashes.
-- German operator UI with CSP, keyboard-reachable controls, no analytics, and no
-  external scripts.
+## Try the Core Workflows
 
-## Project Layout
+```bash
+# Preview ingestion without writing rows.
+pnpm ingest --corpus examples/demo-corpus --dry-run
+
+# Export a sealed ledger excerpt.
+pnpm audit:export \
+  --since 2026-05-10T00:00:00.000Z \
+  --until 2026-05-10T23:59:59.999Z \
+  --out /tmp/agr-export
+
+# Verify exported ledger rows.
+pnpm audit:verify --ledger /tmp/agr-export/audit-ledger.sqlite
+
+# Replay an audited answer.
+pnpm audit:replay
+
+# Generate an Article 50 report bundle.
+pnpm report \
+  --format eu-ai-act-50 \
+  --since 2026-05-10T00:00:00.000Z \
+  --until 2026-05-10T23:59:59.999Z \
+  --out /tmp/agr-report
+```
+
+## Architecture
 
 ```text
 src/app/              Reference app composition
@@ -72,14 +127,18 @@ docs/                 Operator, security, audit, replay, and report docs
 examples/demo-corpus/ Demo PDF/DOCX/Markdown corpus fixtures
 ```
 
-## CLI
+### Request Path
 
-```bash
-pnpm ingest --corpus examples/demo-corpus --dry-run
-pnpm audit:export --since 2026-05-10T00:00:00.000Z --until 2026-05-10T23:59:59.999Z --out /tmp/agr-export
-pnpm audit:verify --ledger /tmp/agr-export/audit-ledger.sqlite
-pnpm audit:replay
-pnpm report --format eu-ai-act-50 --since 2026-05-10T00:00:00.000Z --until 2026-05-10T23:59:59.999Z --out /tmp/agr-report
+```text
+operator session
+  -> active corpus snapshot
+  -> dense and BM25 candidates
+  -> RRF merge
+  -> out-of-corpus gate
+  -> cited generation
+  -> claim validation
+  -> signed ledger row
+  -> replay/report surfaces
 ```
 
 ## Verification
@@ -93,15 +152,21 @@ pnpm build
 `pnpm check:full` runs typecheck, Biome, ESLint, unit tests, knip, integration
 tests, build-backed e2e, and the eval harness.
 
+The CI workflow runs the same full gate on push and pull request.
+
 ## Docker Compose
 
 ```bash
 docker compose up --build
 ```
 
-The demo serves the operator console on `http://127.0.0.1:3000/console`.
+The container serves the operator console on:
 
-## Documentation
+```text
+http://127.0.0.1:3000/console
+```
+
+## Docs
 
 - [Data residency](docs/data-residency.md)
 - [Audit ledger](docs/audit-ledger.md)
@@ -114,14 +179,18 @@ The demo serves the operator console on `http://127.0.0.1:3000/console`.
 - [Eval harness](docs/eval-harness.md)
 - [Master PRD](docs/MASTER_PRD.md)
 
-## Limits
+## Current Scope
 
-The v1 implementation is a reference app, not a production deployment. It is
-single-tenant and one-corpus by design. The local demo uses deterministic stub
-providers; production profiles must supply real storage, WebAuthn ceremonies,
-provider credentials, TLS, key management, disk encryption, backups, and
-retention policy enforcement.
+This repository is a reference implementation, not a production deployment. It
+is single-tenant and one-corpus by design. The local demo uses deterministic
+stub providers; production profiles must supply real storage, WebAuthn
+ceremonies, provider credentials, TLS, key management, disk encryption, backups,
+and retention policy enforcement.
 
 Cloud LLM replay is not advertised as indefinitely byte-stable. Cloud byte
 mismatches are reported as replay drift unless the configured provider profile
 proves bit-equal replay support.
+
+## License
+
+This repository is currently `UNLICENSED`.
