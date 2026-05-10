@@ -7,7 +7,7 @@ Project: `audit-grade-rag`
 Prepared on: 2026-05-10
 Prepared by: Codex
 Write scope: `docs/MASTER_PRD.md`
-Guardrail status: Not bootstrapped
+Guardrail status: Bootstrapped
 Goal status: Not launched
 
 ## §0 Document Control, Source Brief, and Research Basis
@@ -2210,21 +2210,30 @@ Goal status: Not launched
 1886. 2026-05-10: Codex set status to FROZEN because no blocking §12 open question remains.
 1887. 2026-05-10: Codex created `docs/MASTER_PRD.md`.
 
-### §13.2 Source Sufficiency Note
+### §13.2 Guardrail Bootstrap Run
 
-1888. Source material was sufficient to produce a 1500+ line Master PRD.
-1889. `ISA.md` was dense enough to define core scope, stack, constraints, criteria, features, and decisions.
-1890. Web research was needed only to harden legal, security, model-versioning, accessibility, and storage assumptions.
-1891. The PRD does not require additional source material before implementation planning.
-1892. The PRD does require future legal review before production legal claims.
+1888. 2026-05-10: Codex followed `~/.claude/skills/GoalMode/Workflows/Bootstrap.md`.
+1889. 2026-05-10: Codex did not launch `/goal`.
+1890. 2026-05-10: Codex created the pnpm, TypeScript, Biome, ESLint, knip, Vitest, lefthook, and CI guardrail stack.
+1891. 2026-05-10: Codex set `pnpm check:full` as the full agent-done gate.
+1892. 2026-05-10: Codex kept `docs/MASTER_PRD.md` as the frozen implementation contract.
+1893. 2026-05-10: Codex changed only guardrail status metadata and this run-log status update in the frozen PRD.
 
-### §13.3 Final Creation Constraints
+### §13.3 Source Sufficiency Note
 
-1893. Only `docs/MASTER_PRD.md` is intended as the content artifact from this task.
-1894. No source code was generated.
-1895. No tests were generated.
-1896. No package manager command was run.
-1897. No dependency was installed.
-1898. No guardrail files were created.
-1899. No goal runner was launched.
-1900. The document exceeds the requested 1500-line minimum.
+1894. Source material was sufficient to produce a 1500+ line Master PRD.
+1895. `ISA.md` was dense enough to define core scope, stack, constraints, criteria, features, and decisions.
+1896. Web research was needed only to harden legal, security, model-versioning, accessibility, and storage assumptions.
+1897. The PRD does not require additional source material before implementation planning.
+1898. The PRD does require future legal review before production legal claims.
+
+### §13.4 Final Creation Constraints
+
+1899. Only `docs/MASTER_PRD.md` was intended as the content artifact from the PRD creation task.
+1900. No source code was generated during the PRD creation task.
+1901. No tests were generated during the PRD creation task.
+1902. No package manager command was run during the PRD creation task.
+1903. No dependency was installed during the PRD creation task.
+1904. No guardrail files were created during the PRD creation task.
+1905. No goal runner was launched during the PRD creation task.
+1906. The document exceeds the requested 1500-line minimum.

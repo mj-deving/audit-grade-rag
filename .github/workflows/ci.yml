@@ -1,0 +1,43 @@
+name: ci
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check-full:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Detect e2e browser tool
+        id: browser
+        run: |
+          node -e "
+            const p=require('./package.json');
+            const all={...(p.dependencies||{}),...(p.devDependencies||{})};
+            const has=k=>k in all?'true':'false';
+            console.log('playwright='+has('@playwright/test'));
+            console.log('agentBrowser='+has('agent-browser'));
+          " | tee -a "$GITHUB_OUTPUT"
+      - name: Install Playwright browsers
+        if: steps.browser.outputs.playwright == 'true'
+        run: pnpm playwright install --with-deps chromium
+      - name: Install Chrome for Testing (agent-browser)
+        if: steps.browser.outputs.agentBrowser == 'true'
+        run: pnpm exec agent-browser install --with-deps
+      - name: Full gate
+        run: pnpm check:full
