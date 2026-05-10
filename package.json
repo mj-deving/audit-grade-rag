@@ -1,0 +1,62 @@
+{
+  "name": "audit-grade-rag",
+  "version": "1.0.0",
+  "description": "Guardrail baseline for the Audit-Grade RAG Master PRD.",
+  "private": true,
+  "type": "module",
+  "main": "dist/src/index.js",
+  "exports": {
+    ".": "./dist/src/index.js"
+  },
+  "bin": {
+    "audit-grade-rag-contract": "./dist/src/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p .",
+    "typecheck": "tsc -p . --noEmit",
+    "lint": "biome ci . && eslint .",
+    "format": "biome format --write .",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "test:e2e": "pnpm build && node e2e/smoketest.mjs",
+    "eval": "tsx src/eval/baseline.ts",
+    "knip": "knip --no-progress",
+    "check:fast": "pnpm typecheck && pnpm lint && pnpm test:unit && pnpm knip",
+    "check:full": "pnpm check:fast && pnpm test:integration && pnpm test:e2e && pnpm eval",
+    "dev": "tsx src/cli.ts docs/MASTER_PRD.md",
+    "hooks:install": "lefthook install"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@9.15.9",
+  "knip": {
+    "entry": [
+      "src/index.ts"
+    ],
+    "project": [
+      "src/**/*.ts",
+      "e2e/**/*.mjs",
+      "*.config.*"
+    ],
+    "ignoreBinaries": [
+      "agent-browser",
+      "playwright"
+    ]
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.4.15",
+    "@eslint/js": "^9.39.2",
+    "@types/node": "^25.6.2",
+    "@vitest/coverage-v8": "^4.1.5",
+    "eslint": "^9.39.2",
+    "eslint-plugin-import": "^2.32.0",
+    "eslint-plugin-no-only-tests": "^3.4.0",
+    "knip": "^6.12.2",
+    "lefthook": "^2.1.6",
+    "tsx": "^4.21.0",
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.59.2",
+    "vitest": "^4.1.5"
+  }
+}
