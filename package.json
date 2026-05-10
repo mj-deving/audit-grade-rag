@@ -1,7 +1,7 @@
 {
   "name": "audit-grade-rag",
   "version": "1.0.0",
-  "description": "Guardrail baseline for the Audit-Grade RAG Master PRD.",
+  "description": "Audit-grade retrieval-augmented generation reference implementation.",
   "private": true,
   "type": "module",
   "main": "dist/src/index.js",
@@ -20,10 +20,15 @@
     "test:integration": "vitest run --project integration",
     "test:e2e": "pnpm build && node e2e/smoketest.mjs",
     "eval": "tsx src/eval/baseline.ts",
+    "ingest": "tsx src/commands/ingest.ts",
+    "audit:verify": "tsx src/commands/audit-verify.ts",
+    "audit:export": "tsx src/commands/audit-export.ts",
+    "audit:replay": "tsx src/commands/audit-replay.ts",
+    "report": "tsx src/commands/report.ts",
     "knip": "knip --no-progress",
     "check:fast": "pnpm typecheck && pnpm lint && pnpm test:unit && pnpm knip",
     "check:full": "pnpm check:fast && pnpm test:integration && pnpm test:e2e && pnpm eval",
-    "dev": "tsx src/cli.ts docs/MASTER_PRD.md",
+    "dev": "tsx src/commands/dev-server.ts",
     "hooks:install": "lefthook install"
   },
   "keywords": [],
@@ -32,7 +37,8 @@
   "packageManager": "pnpm@9.15.9",
   "knip": {
     "entry": [
-      "src/index.ts"
+      "src/index.ts",
+      "src/cli.ts"
     ],
     "project": [
       "src/**/*.ts",

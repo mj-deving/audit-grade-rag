@@ -30,8 +30,8 @@ jobs:
             const p=require('./package.json');
             const all={...(p.dependencies||{}),...(p.devDependencies||{})};
             const has=k=>k in all?'true':'false';
-            console.log('playwright='+has('@playwright/test'));
-            console.log('agentBrowser='+has('agent-browser'));
+            process.stdout.write('playwright='+has('@playwright/test')+'\n');
+            process.stdout.write('agentBrowser='+has('agent-browser')+'\n');
           " | tee -a "$GITHUB_OUTPUT"
       - name: Install Playwright browsers
         if: steps.browser.outputs.playwright == 'true'

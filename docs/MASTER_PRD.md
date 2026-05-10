@@ -2237,3 +2237,19 @@ Goal status: Not launched
 1904. No guardrail files were created during the PRD creation task.
 1905. No goal runner was launched during the PRD creation task.
 1906. The document exceeds the requested 1500-line minimum.
+
+### §13.5 Implementation Progress Notes
+
+1907. 2026-05-10: Implemented AC-ID-001 through AC-ID-015 with bootstrap magic links, WebAuthn-only enrolled login, recovery-only post-enrollment links, secure cookie policy, idle and absolute session expiry, anonymous-query rejection, password-free schema/UI, rate limiting, and login audit rows.
+1908. 2026-05-10: Implemented AC-ING-001 through AC-ING-022 with PDF, DOCX, and Markdown ingestion, OCR and hidden-text warnings, default chunk sizing and overlap metadata, chunk identity/page/offset/text/hash storage, dry-run reporting, no-op unchanged ingestion, versioned snapshots, failed-ingest non-activation, and ingest completion audit rows.
+1909. 2026-05-10: Implemented AC-RET-001 through AC-RET-017 with deterministic dense and BM25 candidate sets, RRF ranking, top-K bounds, active-snapshot filtering, retrieved chunk metadata, out-of-corpus refusal detection from pre-fusion evidence scores, LLM-call avoidance, and refusal audit rows.
+1910. 2026-05-10: Implemented AC-GEN-001 through AC-GEN-017 with pinned model, prompt, temperature, seed handling, chunk-grounded prompt rendering, claim/citation parsing, citation validation, one retry, blocked uncited output handling, and inline citations for valid answers.
+1911. 2026-05-10: Implemented AC-AUD-001 through AC-AUD-024 with append-only signed hash-chain ledger rows for answered, refused, and blocked outcomes, required hashes and metadata, clean and tampered verification, no update/delete ledger path, and sealed export artifacts with manifest and signatures.
+1912. 2026-05-10: Implemented AC-REP-001 through AC-REP-015 with replay entry loading, corpus/prompt/embedding/model checks, bit-equal pass states, prompt/corpus/model drift states, cloud byte-mismatch drift, unsupported-provider state, and replay result audit rows.
+1913. 2026-05-10: Implemented AC-EVAL-001 through AC-EVAL-015 with JSONL golden-set parsing, required-field and duplicate checks, groundedness, citation accuracy, refusal correctness, per-tag breakdown, threshold failures, machine-readable output, and UI exposure of latest eval status.
+1914. 2026-05-10: Implemented AC-RPT-001 through AC-RPT-022 with Article 50 report CLI arguments, timestamp validation, identity/context/model/prompt/embedding/snapshot/query/outcome/eval/refusal fields, prompt appendix, sealed audit excerpt hash, deterministic JSON and PDF bytes, audit excerpt bundle, and time-window filtering.
+1915. 2026-05-10: Implemented AC-UI-001 through AC-UI-014 with German operator/auth/console/source/report views, query and answer panels, retrieved chunks, audit trail, citation controls, source highlighting, replay status, report bundle view, keyboard control metadata, CSP, and no analytics or external scripts.
+1916. 2026-05-10: Implemented AC-SEC-001 through AC-SEC-013 with INFO redaction of query/chunk/answer text, prompt secret checks, authorization before retrieval/generation, egress allowlist, tombstoned operator identity support, verifiable ledger after tombstone, keyless exports, tamper rejection, citation-validator prompt-injection resistance, and hidden-text ingest warnings.
+1917. 2026-05-10: Implemented AC-BLD-001 through AC-BLD-012 with `pnpm check:full` wiring for typecheck, Biome, ESLint, knip, unit, integration, e2e, and eval, CI full-gate execution, README five-minute install, and Docker Compose operator-console demo wiring.
+1918. 2026-05-10: `pnpm check:fast` exited 0 after the implementation and acceptance-test harness changes.
+1919. 2026-05-10: `pnpm check:full` exited 0 after final implementation, build, e2e, and product eval wiring.

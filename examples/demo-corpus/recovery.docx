@@ -1,0 +1,4 @@
+DOCX-FIXTURE
+
+Wiederherstellung nutzt Magic Links nur fuer Bootstrap und Recovery. Nach der
+Registrierung ist WebAuthn fuer Logins erforderlich.
