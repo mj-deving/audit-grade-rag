@@ -1,3 +1,5 @@
+import { redactOperationalMeta } from "../modules/security/redaction.js";
+
 type Level = "trace" | "debug" | "info" | "warn" | "error";
 
 const order: Record<Level, number> = { trace: 0, debug: 1, info: 2, warn: 3, error: 4 };
@@ -10,7 +12,8 @@ export const logger = {
       return;
     }
 
-    const entry = { ts: new Date().toISOString(), level, msg, ...meta };
+    const safeMeta = level === "info" ? redactOperationalMeta(meta) : meta;
+    const entry = { ts: new Date().toISOString(), level, msg, ...safeMeta };
     process.stdout.write(`${JSON.stringify(entry)}\n`);
   },
   trace(msg: string, meta?: Record<string, unknown>): void {

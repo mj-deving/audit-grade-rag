@@ -1,0 +1,107 @@
+import type { QueryResult } from "../domain/types.js";
+import { sha256Hex, stableId } from "../lib/hash.js";
+import { AuditLedger } from "../modules/audit/ledger.js";
+import { AuthService, hashOperatorId, type Session } from "../modules/auth/auth.js";
+import {
+  defaultEmbeddingProfile,
+  defaultPromptTemplate,
+  EvidenceEchoProvider,
+  generateAnswer,
+  type LlmProvider,
+} from "../modules/generation/generation.js";
+import { IngestionStore } from "../modules/ingest/ingest.js";
+import { retrieveChunks } from "../modules/retrieval/retrieval.js";
+
+export type ReferenceApp = {
+  readonly ledger: AuditLedger;
+  readonly auth: AuthService;
+  readonly ingest: IngestionStore;
+  query(sessionId: string | null, query: string, topK?: number): QueryResult;
+  bootstrapOperator(email: string): Session;
+};
+
+export function createReferenceApp(
+  provider: LlmProvider = new EvidenceEchoProvider(),
+): ReferenceApp {
+  const ledger = new AuditLedger();
+  const auth = new AuthService(ledger);
+  const ingest = new IngestionStore(ledger);
+  return {
+    ledger,
+    auth,
+    ingest,
+    query: (sessionId, query, topK) =>
+      executeQuery({
+        ledger,
+        auth,
+        ingest,
+        provider,
+        sessionId,
+        query,
+        ...(topK === undefined ? {} : { topK }),
+      }),
+    bootstrapOperator: (email) => bootstrapOperator(auth, email),
+  };
+}
+
+function executeQuery(input: {
+  readonly ledger: AuditLedger;
+  readonly auth: AuthService;
+  readonly ingest: IngestionStore;
+  readonly provider: LlmProvider;
+  readonly sessionId: string | null;
+  readonly query: string;
+  readonly topK?: number;
+}): QueryResult {
+  const session = input.auth.requireSession(input.sessionId);
+  const snapshot = input.ingest.activeSnapshot();
+  if (snapshot === null) {
+    throw new Error("No active corpus snapshot");
+  }
+  const trace = retrieveChunks(input.query, input.ingest.allChunks(), {
+    activeSnapshotId: snapshot.id,
+    ...(input.topK === undefined ? {} : { topK: input.topK }),
+  });
+  const outcome = generateAnswer({
+    query: input.query,
+    trace,
+    corpusSnapshotId: snapshot.id,
+    corpusSnapshotHash: snapshot.snapshotHash,
+    provider: input.provider,
+    promptTemplate: defaultPromptTemplate,
+    embeddingProfile: defaultEmbeddingProfile,
+  });
+  const ledgerInput = {
+    entryType: `query.${outcome.outcome.replaceAll("-", "_")}`,
+    outcome: outcome.outcome,
+    queryText: input.query,
+    retrievedChunks: outcome.retrievedChunks,
+    claimCitations: outcome.claims.flatMap((claim) => claim.citations),
+    modelVersion: outcome.modelVersion,
+    promptVersion: outcome.promptVersion,
+    embeddingModelVersion: outcome.embeddingModelVersion,
+    providerProfileId: outcome.providerProfileId,
+    providerReplayCapability: input.provider.profile.replayCapability,
+    seed: outcome.seed,
+    corpusSnapshotId: outcome.corpusSnapshotId,
+    corpusSnapshotHash: outcome.corpusSnapshotHash,
+    promptHash: outcome.promptHash,
+    userIdHash: hashOperatorId(session.operatorId),
+    extra: { queryId: stableId("query", [sha256Hex(input.query), session.id]) },
+    ...(outcome.answer === undefined ? {} : { generatedAnswer: outcome.answer }),
+  };
+  const ledgerEntry = input.ledger.append(ledgerInput);
+  const metadata = ledgerEntry.metadata as { readonly queryId?: unknown };
+  const queryId = metadata.queryId;
+  if (typeof queryId !== "string") {
+    throw new Error("query id was not ledgered");
+  }
+  return { ...outcome, queryId, ledgerEntry };
+}
+
+function bootstrapOperator(auth: AuthService, email: string): Session {
+  const request = auth.requestMagicLink(email);
+  const consumed = auth.consumeMagicLink(request.token);
+  auth.registerPasskey(consumed.operatorId, "local-passkey");
+  return auth.loginWithPasskey(consumed.operatorId, "local-passkey");
+}
