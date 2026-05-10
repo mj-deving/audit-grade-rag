@@ -175,7 +175,7 @@ function renderTopbar(result: QueryResult): string {
       <div>
         <p class="eyebrow">Belegte Korpusantworten</p>
         <h1>Audit Workbench</h1>
-        <p>Antworten, Evidenz und Audit-Status in einer Operator-Ansicht.</p>
+        <p>Antworten, Evidenz und Audit-Status.</p>
       </div>
       <div class="status-strip" aria-label="Laufzeitstatus">
         ${metric("Snapshot", shortHash(result.corpusSnapshotId))}
