@@ -269,7 +269,14 @@ it("redacts content, blocks egress, and keeps the full build gate wired", () => 
     "pnpm check:fast && pnpm test:integration && pnpm test:e2e && pnpm eval",
   );
   expect(readFileSync(".github/workflows/ci.yml", "utf8")).toContain("pnpm check:full");
-  expect(readFileSync("README.md", "utf8")).toContain("Five-Minute Install");
+  const readme = readFileSync("README.md", "utf8");
+  expect(readme).toContain("Five-Minute Install");
+  expect(readme).toContain("docker-compose up -d postgres");
+  expect(readme).toContain(
+    "DATABASE_URL=postgres://audit_grade_rag:audit_grade_rag@127.0.0.1:5432/audit_grade_rag",
+  );
+  expect(readme).toContain("pnpm ingest --corpus ./examples/eu-ai-act");
+  expect(readme).toContain("http://127.0.0.1:3000/console");
   expect(readFileSync("docker-compose.yml", "utf8")).toContain("3000:3000");
 });
 

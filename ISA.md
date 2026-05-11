@@ -151,7 +151,7 @@ Deliver a self-hostable, open-source-auditable RAG application that ingests one 
 
 - [x] ISC-48: `pnpm check:full` runs typecheck + Biome + ESLint + knip + Vitest (unit + integration) + e2e (`agent-browser`-driven) + eval harness, and exits 0.
 - [x] ISC-49: lefthook fast gate runs at every commit; pre-push runs integration; CI runs `pnpm check:full` on every push.
-- [ ] ISC-50: README ships a 5-minute install: `git clone && pnpm install && docker-compose up postgres && pnpm ingest --corpus ./examples/eu-ai-act && pnpm dev` produces a working operator console.
+- [x] ISC-50: README ships a 5-minute install: `git clone && pnpm install && docker-compose up postgres && pnpm ingest --corpus ./examples/eu-ai-act && pnpm dev` produces a working operator console.
 - [ ] ISC-51: Anti: No commit lands on `main` with a failing CI run. Branch-protection rules enforce this on the GitHub side.
 
 ## Test Strategy
