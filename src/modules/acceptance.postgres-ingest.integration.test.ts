@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 import { Pool } from "pg";
 import { expect, it } from "vitest";
 import { AuditLedger } from "./audit/ledger.js";
+import { HashEmbeddingProvider } from "./ingest/embedding.js";
 import { PostgresIngestionStore } from "./ingest/postgres-store.js";
 import { retrievePostgresChunks } from "./retrieval/postgres-retrieval.js";
 
@@ -47,7 +48,8 @@ type DatabaseHandle = {
 async function runIngestAssertions(pool: Pool, dir: string): Promise<void> {
   await writeCorpus(dir);
   const ledger = new AuditLedger();
-  const store = new PostgresIngestionStore({ pool, ledger });
+  const embeddingProvider = new HashEmbeddingProvider();
+  const store = new PostgresIngestionStore({ pool, ledger, embeddingProvider });
   const dryRun = await store.ingest({ corpusDir: dir, dryRun: true });
   const ingested = await store.ingest({ corpusDir: dir });
   const unchanged = await store.ingest({ corpusDir: dir });
@@ -77,22 +79,42 @@ async function runIngestAssertions(pool: Pool, dir: string): Promise<void> {
 
 async function runRetrievalAssertions(pool: Pool, dir: string): Promise<void> {
   await writeRetrievalCorpus(dir);
-  const store = new PostgresIngestionStore({ pool, ledger: new AuditLedger() });
+  const embeddingProvider = new HashEmbeddingProvider();
+  const store = new PostgresIngestionStore({
+    pool,
+    ledger: new AuditLedger(),
+    embeddingProvider,
+  });
   const ingested = await store.ingest({ corpusDir: dir });
   await writeFile(join(dir, "doc-00.md"), "Aktualisierte Auditpflicht ohne alte Marker.");
   const changed = await store.ingest({ corpusDir: dir });
   const firstSnapshotId = requireSnapshotId(ingested.snapshot);
   const secondSnapshotId = requireSnapshotId(changed.snapshot);
-  const trace = await retrievePostgresChunks(pool, "Auditpflicht beleg alpha", {
-    activeSnapshotId: firstSnapshotId,
-  });
-  const currentTrace = await retrievePostgresChunks(pool, "Aktualisierte Auditpflicht", {
-    activeSnapshotId: secondSnapshotId,
-    topK: 6,
-  });
-  const refused = await retrievePostgresChunks(pool, "zzzz yyyyy xxxx", {
-    activeSnapshotId: secondSnapshotId,
-  });
+  const trace = await retrievePostgresChunks(
+    pool,
+    "Auditpflicht beleg alpha",
+    {
+      activeSnapshotId: firstSnapshotId,
+    },
+    embeddingProvider,
+  );
+  const currentTrace = await retrievePostgresChunks(
+    pool,
+    "Aktualisierte Auditpflicht",
+    {
+      activeSnapshotId: secondSnapshotId,
+      topK: 6,
+    },
+    embeddingProvider,
+  );
+  const refused = await retrievePostgresChunks(
+    pool,
+    "zzzz yyyyy xxxx",
+    {
+      activeSnapshotId: secondSnapshotId,
+    },
+    embeddingProvider,
+  );
 
   expect(trace.vectorCandidates).toHaveLength(50);
   expect(trace.bm25Candidates).toHaveLength(50);

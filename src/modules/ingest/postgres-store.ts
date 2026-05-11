@@ -5,11 +5,10 @@ import type { Clock } from "../../lib/time.js";
 import { systemClock } from "../../lib/time.js";
 import type { AuditLedger } from "../audit/ledger.js";
 import {
-  defaultEmbeddingDimension,
-  defaultEmbeddingModel,
-  embedText,
+  type EmbeddingProvider,
   estimateHnswIndexBytes,
   pgVectorLiteral,
+  requireConfiguredEmbeddingProvider,
 } from "./embedding.js";
 import type { IngestOptions, IngestResult, Revision } from "./ingest.js";
 import { chunkRevision, readCorpusRevisions } from "./ingest.js";
@@ -34,17 +33,20 @@ export type PostgresIngestionStoreOptions = {
   readonly databaseUrl?: string;
   readonly pool?: Pool;
   readonly ledger: AuditLedger;
+  readonly embeddingProvider?: EmbeddingProvider;
   readonly clock?: Clock;
 };
 
 export class PostgresIngestionStore {
   private readonly pool: Pool;
   private readonly ownsPool: boolean;
+  private readonly embeddingProvider: EmbeddingProvider;
   private schemaReady = false;
 
   constructor(private readonly options: PostgresIngestionStoreOptions) {
     this.pool = options.pool ?? new Pool({ connectionString: options.databaseUrl });
     this.ownsPool = options.pool === undefined;
+    this.embeddingProvider = options.embeddingProvider ?? requireConfiguredEmbeddingProvider();
   }
 
   async close(): Promise<void> {
@@ -61,10 +63,28 @@ export class PostgresIngestionStore {
     const warnings = revisions.flatMap((revision) => revision.warnings);
     const changed = await this.changedRevisions(revisions);
     if (options.dryRun === true) {
-      return result(true, revisions, changed, chunks, warnings, null, false);
+      return result(
+        true,
+        revisions,
+        changed,
+        chunks,
+        warnings,
+        null,
+        false,
+        this.embeddingProvider,
+      );
     }
     if (changed.length === 0) {
-      return result(false, revisions, changed, [], warnings, await this.activeSnapshot(), false);
+      return result(
+        false,
+        revisions,
+        changed,
+        [],
+        warnings,
+        await this.activeSnapshot(),
+        false,
+        this.embeddingProvider,
+      );
     }
     return this.writeSnapshot(
       revisions,
@@ -203,16 +223,31 @@ export class PostgresIngestionStore {
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
-      const snapshot = await insertSnapshot(client, revisions, chunks, failAfterExtract);
+      const snapshot = await insertSnapshot(
+        client,
+        revisions,
+        chunks,
+        failAfterExtract,
+        this.embeddingProvider,
+      );
       await insertDocuments(client, snapshot.id, revisions);
       if (!failAfterExtract) {
-        await insertChunks(client, chunks, snapshot);
+        await insertChunks(client, chunks, snapshot, this.embeddingProvider);
       }
       await client.query("COMMIT");
       if (!failAfterExtract) {
         this.ledgerIngestCompletion(revisions.length, chunks.length, snapshot);
       }
-      return result(false, revisions, changed, chunks, warnings, snapshot, !failAfterExtract);
+      return result(
+        false,
+        revisions,
+        changed,
+        chunks,
+        warnings,
+        snapshot,
+        !failAfterExtract,
+        this.embeddingProvider,
+      );
     } catch (error) {
       await client.query("ROLLBACK");
       throw error;
@@ -229,7 +264,7 @@ export class PostgresIngestionStore {
     this.options.ledger.append({
       entryType: "corpus.ingest.completed",
       outcome: "corpus-ingest-completed",
-      embeddingModelVersion: defaultEmbeddingModel,
+      embeddingModelVersion: this.embeddingProvider.profile.modelVersion,
       corpusSnapshotId: snapshot.id,
       corpusSnapshotHash: snapshot.snapshotHash,
       userIdHash: sha256Hex("system-ingest"),
@@ -281,14 +316,18 @@ function result(
   warnings: readonly string[],
   snapshot: CorpusSnapshot | null,
   activated: boolean,
+  embeddingProvider: EmbeddingProvider,
 ): IngestResult {
   return {
     dryRun,
     documentCount: revisions.length,
     changedDocumentCount: changed.length,
     chunkCount: chunks.length,
-    embeddingModel: defaultEmbeddingModel,
-    estimatedIndexSizeBytes: estimateHnswIndexBytes(chunks.length),
+    embeddingModel: embeddingProvider.profile.modelVersion,
+    estimatedIndexSizeBytes: estimateHnswIndexBytes(
+      chunks.length,
+      embeddingProvider.profile.dimension,
+    ),
     warnings,
     snapshot,
     activated,
@@ -301,6 +340,7 @@ async function insertSnapshot(
   revisions: readonly Revision[],
   chunks: readonly CorpusChunk[],
   failAfterExtract: boolean,
+  embeddingProvider: EmbeddingProvider,
 ): Promise<CorpusSnapshot> {
   const { rows } = await client.query<{ readonly next_sequence: number }>(
     "SELECT COALESCE(MAX(sequence), 0) + 1 AS next_sequence FROM corpus_snapshots",
@@ -312,7 +352,7 @@ async function insertSnapshot(
     sequence,
     snapshotHash:
       chunks.length === 0 ? baseHash : sha256Hex(`${baseHash}:${String(chunks.length)}`),
-    embeddingModelVersion: defaultEmbeddingModel,
+    embeddingModelVersion: embeddingProvider.profile.modelVersion,
     chunkerVersion,
     status: failAfterExtract ? "failed" : "active",
   };
@@ -357,8 +397,10 @@ async function insertChunks(
   client: PoolClient,
   chunks: readonly CorpusChunk[],
   snapshot: CorpusSnapshot,
+  embeddingProvider: EmbeddingProvider,
 ): Promise<void> {
   for (const chunk of chunks) {
+    const embedding = await embeddingProvider.embed(chunk.chunkText);
     await client.query(
       `INSERT INTO corpus_chunks
          (chunk_id, doc_id, source_document_id, source_type, source_path, page, char_offset,
@@ -389,7 +431,7 @@ async function insertChunks(
         snapshot.snapshotHash,
         JSON.stringify(chunk.extractionWarnings),
         chunk.ocrUsed,
-        pgVectorLiteral(embedText(chunk.chunkText, defaultEmbeddingDimension)),
+        pgVectorLiteral(embedding),
       ],
     );
   }
