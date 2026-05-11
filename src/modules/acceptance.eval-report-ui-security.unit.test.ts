@@ -268,7 +268,12 @@ it("redacts content, blocks egress, and keeps the full build gate wired", () => 
   expect(readFileSync("package.json", "utf8")).toContain(
     "pnpm check:fast && pnpm test:integration && pnpm test:e2e && pnpm eval",
   );
-  expect(readFileSync(".github/workflows/ci.yml", "utf8")).toContain("pnpm check:full");
+  const ci = readFileSync(".github/workflows/ci.yml", "utf8");
+  expect(ci).toContain("pnpm check:full");
+  expect(ci).toContain("pnpm/action-setup@v4");
+  expect(ci).not.toContain("version: 9");
+  expect(ci).toContain("poppler-utils");
+  expect(ci).toContain("typst --version");
   const readme = readFileSync("README.md", "utf8");
   expect(readme).toContain("Five-Minute Install");
   expect(readme).toContain("docker-compose up -d postgres");
