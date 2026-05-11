@@ -1,5 +1,8 @@
-import { mkdir, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { promisify } from "node:util";
 import type { LedgerEntry, Outcome } from "../../domain/types.js";
 import { canonicalJson } from "../../lib/canonical-json.js";
 import { sha256Hex } from "../../lib/hash.js";
@@ -23,6 +26,7 @@ export type Article50Report = {
   readonly promptVersions: readonly string[];
   readonly embeddingVersions: readonly string[];
   readonly corpusSnapshots: readonly string[];
+  readonly corpusSnapshotHashes: readonly string[];
   readonly queryVolume: number;
   readonly outcomeBreakdown: Record<string, number>;
   readonly evalScores: Pick<EvalRun, "groundedness" | "citationAccuracy" | "refusalCorrectness">;
@@ -36,8 +40,8 @@ export type Article50Report = {
 export type ReportBundle = {
   readonly report: Article50Report;
   readonly jsonBytes: string;
-  readonly pdfBytes: string;
-  readonly auditExcerptZipBytes: string;
+  readonly pdfBytes: Buffer;
+  readonly auditExcerptZipBytes: Buffer;
   readonly jsonSha256: string;
   readonly pdfSha256: string;
   readonly auditExcerptZipSha256: string;
@@ -50,6 +54,9 @@ export type ReportBundle = {
     readonly manifestPath: string;
   };
 };
+
+const execFileAsync = promisify(execFile);
+const reportTemplatePath = "templates/reports/eu-ai-act-50.typ";
 
 export async function generateArticle50Report(
   ledger: AuditLedger,
@@ -69,10 +76,11 @@ export async function generateArticle50Report(
         row.timestampMs <= untilMs &&
         row.entryType !== "report.generated",
     );
-  const report = buildReport(rows, request, evalRun);
+  const auditExcerptZipBytes = await renderSealedAuditZip(ledger, sinceMs, untilMs);
+  const auditExcerptZipSha256 = sha256Hex(auditExcerptZipBytes);
+  const report = buildReport(rows, request, evalRun, auditExcerptZipSha256);
   const jsonBytes = `${canonicalJson(report)}\n`;
-  const pdfBytes = renderDeterministicPdf(report);
-  const auditExcerptZipBytes = renderDeterministicAuditZip(rows);
+  const pdfBytes = await renderTypstPdf(report);
   const hashes = hashArtifacts(jsonBytes, pdfBytes, auditExcerptZipBytes);
   const event = ledger.append({
     entryType: "report.generated",
@@ -101,8 +109,10 @@ function buildReport(
   rows: readonly LedgerEntry[],
   request: ReportRequest,
   evalRun: EvalRun,
+  sealedAuditExcerptHash: string,
 ): Article50Report {
   const queryRows = rows.filter((row) => row.entryType.startsWith("query."));
+  const promptVersions = unique(rows.map((row) => row.promptVersion));
   return {
     systemIdentity: "Audit-Grade RAG v1",
     deploymentContext: "single-organization self-hosted deployment",
@@ -112,6 +122,7 @@ function buildReport(
     promptVersions: unique(rows.map((row) => row.promptVersion)),
     embeddingVersions: unique(rows.map((row) => row.embeddingModelVersion)),
     corpusSnapshots: unique(rows.map((row) => row.corpusSnapshotId)),
+    corpusSnapshotHashes: unique(rows.map((row) => row.corpusSnapshotHash)),
     queryVolume: queryRows.length,
     outcomeBreakdown: countOutcomes(rows),
     evalScores: {
@@ -123,8 +134,8 @@ function buildReport(
       queryRows.length === 0
         ? 0
         : countOutcome(queryRows, "refused-out-of-corpus") / queryRows.length,
-    promptTemplateAppendix: "Prompt version 1.0.0 requires [chunk:<chunk_id>] on every claim.",
-    sealedAuditExcerptHash: sha256Hex(rows.map((row) => row.id).join("|")),
+    promptTemplateAppendix: `Prompt versions in window: ${promptVersions.join(", ") || "none"}. Every answer prompt requires [chunk:<chunk_id>] markers on each claim.`,
+    sealedAuditExcerptHash,
     limitations: [
       "This Article 50 package is a transparency artifact, not legal advice.",
       "Cloud replay reports drift honestly when provider bytes differ.",
@@ -134,27 +145,74 @@ function buildReport(
   };
 }
 
-function renderDeterministicPdf(report: Article50Report): string {
+async function renderSealedAuditZip(
+  ledger: AuditLedger,
+  sinceMs: number,
+  untilMs: number,
+): Promise<Buffer> {
+  const dir = await mkdtemp(join(tmpdir(), "agr-report-excerpt-"));
+  try {
+    const exported = await ledger.exportSealed(dir, sinceMs, untilMs, {
+      excludeEntryTypes: ["report.generated"],
+    });
+    return await readFile(exported.zipPath);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+async function renderTypstPdf(report: Article50Report): Promise<Buffer> {
+  const dir = await mkdtemp(join(tmpdir(), "agr-typst-report-"));
+  try {
+    const inputPath = join(dir, "disclosure.typ");
+    const outputPath = join(dir, "disclosure.pdf");
+    await writeFile(inputPath, await renderTypstSource(report), "utf8");
+    await execFileAsync("typst", ["compile", "--creation-timestamp", "0", inputPath, outputPath]);
+    return await readFile(outputPath);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+async function renderTypstSource(report: Article50Report): Promise<string> {
+  const template = await readFile(reportTemplatePath, "utf8");
+  return template.replace("{{body}}", typstBody(report));
+}
+
+function typstBody(report: Article50Report): string {
   return [
-    "%PDF-1.4",
-    "% Audit-Grade RAG deterministic Article 50 disclosure",
-    `1 0 obj << /Title (${report.systemIdentity}) >> endobj`,
-    `2 0 obj << /Subject (${report.deploymentContext}) >> endobj`,
-    `3 0 obj << /CreationDate (${report.until}) >> endobj`,
-    `4 0 obj << /Contents (${sha256Hex(canonicalJson(report))}) >> endobj`,
-    "%%EOF",
+    `= ${typstEscape(report.systemIdentity)} EU AI Act Article 50 Disclosure`,
+    "",
+    `*Window:* ${typstEscape(report.since)} to ${typstEscape(report.until)}`,
+    `*Deployment context:* ${typstEscape(report.deploymentContext)}`,
+    `*Models:* ${typstEscape(joinOrNone(report.modelVersions))}`,
+    `*Embedding models:* ${typstEscape(joinOrNone(report.embeddingVersions))}`,
+    `*Corpus snapshots:* ${typstEscape(joinOrNone(report.corpusSnapshots))}`,
+    `*Corpus snapshot hashes:* ${typstEscape(joinOrNone(report.corpusSnapshotHashes))}`,
+    `*Query volume:* ${String(report.queryVolume)}`,
+    `*Outcome breakdown:* ${typstEscape(canonicalJson(report.outcomeBreakdown))}`,
+    `*Groundedness:* ${String(report.evalScores.groundedness)}`,
+    `*Citation accuracy:* ${String(report.evalScores.citationAccuracy)}`,
+    `*Refusal correctness:* ${String(report.evalScores.refusalCorrectness)}`,
+    `*Refusal rate:* ${String(report.refusalRate)}`,
+    `*Sealed audit excerpt SHA-256:* ${typstEscape(report.sealedAuditExcerptHash)}`,
+    "",
+    "== Prompt Template Appendix",
+    typstEscape(report.promptTemplateAppendix),
+    "",
+    "== Human Oversight",
+    typstEscape(report.humanOversight),
+    "",
+    "== Limitations",
+    ...report.limitations.map((limitation) => `- ${typstEscape(limitation)}`),
     "",
   ].join("\n");
 }
 
-function renderDeterministicAuditZip(rows: readonly LedgerEntry[]): string {
-  return `PK\naudit-excerpt\n${rows.map((row) => canonicalJson(row)).join("\n")}\n`;
-}
-
 function hashArtifacts(
   jsonBytes: string,
-  pdfBytes: string,
-  auditExcerptZipBytes: string,
+  pdfBytes: Buffer,
+  auditExcerptZipBytes: Buffer,
 ): Pick<ReportBundle, "jsonSha256" | "pdfSha256" | "auditExcerptZipSha256" | "bundleSha256"> {
   const jsonSha256 = sha256Hex(jsonBytes);
   const pdfSha256 = sha256Hex(pdfBytes);
@@ -170,18 +228,18 @@ function hashArtifacts(
 async function writeReportFiles(
   outDir: string,
   jsonBytes: string,
-  pdfBytes: string,
-  auditExcerptZipBytes: string,
+  pdfBytes: Buffer,
+  auditExcerptZipBytes: Buffer,
   hashes: Pick<ReportBundle, "jsonSha256" | "pdfSha256" | "auditExcerptZipSha256" | "bundleSha256">,
 ): Promise<NonNullable<ReportBundle["files"]>> {
   await mkdir(outDir, { recursive: true });
-  const jsonPath = join(outDir, "eu-ai-act-50.json");
-  const pdfPath = join(outDir, "eu-ai-act-50.pdf");
+  const jsonPath = join(outDir, "disclosure.json");
+  const pdfPath = join(outDir, "disclosure.pdf");
   const auditExcerptZipPath = join(outDir, "audit-excerpt.zip");
   const manifestPath = join(outDir, "manifest.json");
   await writeFile(jsonPath, jsonBytes, "utf8");
-  await writeFile(pdfPath, pdfBytes, "utf8");
-  await writeFile(auditExcerptZipPath, auditExcerptZipBytes, "utf8");
+  await writeFile(pdfPath, pdfBytes);
+  await writeFile(auditExcerptZipPath, auditExcerptZipBytes);
   await writeFile(manifestPath, `${canonicalJson(hashes)}\n`, "utf8");
   return { jsonPath, pdfPath, auditExcerptZipPath, manifestPath };
 }
@@ -200,6 +258,14 @@ function countOutcome(rows: readonly LedgerEntry[], outcome: Outcome): number {
 
 function unique(values: readonly string[]): readonly string[] {
   return [...new Set(values.filter((value) => value !== "not-applicable"))].sort();
+}
+
+function joinOrNone(values: readonly string[]): string {
+  return values.length === 0 ? "none" : values.join(", ");
+}
+
+function typstEscape(value: string): string {
+  return value.replace(/[\\#*_`$[\]<>@]/gu, "\\$&");
 }
 
 export function reportWindowLabel(since: string, until: string): string {
