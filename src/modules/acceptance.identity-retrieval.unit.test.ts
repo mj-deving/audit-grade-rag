@@ -4,6 +4,7 @@ import { createRuntimeApp } from "../app/runtime-app.js";
 import type { CorpusChunk } from "../domain/types.js";
 import { AuditLedger } from "./audit/ledger.js";
 import { AuthService, sessionCookieHeader, UnauthorizedError } from "./auth/auth.js";
+import { createLocalPasskey } from "./auth/passkey-proof.js";
 import { retrieveChunks } from "./retrieval/retrieval.js";
 import { parseOperatorLocale } from "./ui/locale.js";
 
@@ -17,9 +18,23 @@ it("enforces bootstrap, passkey sessions, cookies, recovery, and rate limits", (
   expect(consumed.webauthnRegistrationRequired).toBe(true);
   expect(auth.schemaColumns().join(" ")).not.toMatch(/password/iu);
 
-  auth.registerPasskey(consumed.operatorId, "credential");
+  const passkey = createLocalPasskey("credential");
+  const registration = auth.createPasskeyRegistrationOptions(consumed.operatorId);
+  auth.registerPasskey({
+    operatorId: consumed.operatorId,
+    credentialId: passkey.credentialId,
+    publicKeyPem: passkey.publicKeyPem,
+    challenge: registration.challenge,
+    signatureBase64Url: passkey.signChallenge(registration.challenge),
+  });
   const recovery = auth.requestMagicLink("operator@example.local");
-  const session = auth.loginWithPasskey(consumed.operatorId, "credential");
+  const authentication = auth.createPasskeyAuthenticationOptions(consumed.operatorId);
+  const session = auth.loginWithPasskey({
+    operatorId: consumed.operatorId,
+    credentialId: passkey.credentialId,
+    challenge: authentication.challenge,
+    signatureBase64Url: passkey.signChallenge(authentication.challenge),
+  });
 
   expect(recovery.recoveryOnly).toBe(true);
   expect(auth.cookiePolicy).toMatchObject({ httpOnly: true, secure: true, sameSite: "Strict" });
@@ -75,9 +90,16 @@ it("runs magic-link bootstrap, passkey registration, and passkey-only login over
   });
   expect(consumed.data).toMatchObject({ webauthnRegistrationRequired: true });
 
+  const passkey = createLocalPasskey("local-passkey");
+  const registration = await postJson(app, "/api/auth/webauthn/register/options", {
+    operatorId: stringField(consumed.data, "operatorId"),
+  });
   await postJson(app, "/api/auth/webauthn/register/verify", {
     operatorId: stringField(consumed.data, "operatorId"),
-    credentialId: "local-passkey",
+    credentialId: passkey.credentialId,
+    publicKeyPem: passkey.publicKeyPem,
+    challenge: stringField(registration.data, "challenge"),
+    signatureBase64Url: passkey.signChallenge(stringField(registration.data, "challenge")),
   });
 
   const recovery = await postJson(app, "/api/auth/magic-link/request", {
@@ -85,12 +107,17 @@ it("runs magic-link bootstrap, passkey registration, and passkey-only login over
   });
   expect(recovery.data).toMatchObject({ recoveryOnly: true });
 
+  const authentication = await postJson(app, "/api/auth/webauthn/authenticate/options", {
+    operatorId: stringField(consumed.data, "operatorId"),
+  });
   const login = await app.request("/api/auth/webauthn/authenticate/verify", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       operatorId: stringField(consumed.data, "operatorId"),
-      credentialId: "local-passkey",
+      credentialId: passkey.credentialId,
+      challenge: stringField(authentication.data, "challenge"),
+      signatureBase64Url: passkey.signChallenge(stringField(authentication.data, "challenge")),
     }),
   });
   expect(login.status).toBe(200);
