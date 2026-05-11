@@ -4,6 +4,7 @@ import type { Clock } from "../lib/time.js";
 import { systemClock } from "../lib/time.js";
 import { AuditLedger } from "../modules/audit/ledger.js";
 import { AuthService, hashOperatorId, type Session } from "../modules/auth/auth.js";
+import { createLocalPasskey } from "../modules/auth/passkey-proof.js";
 import {
   defaultEmbeddingProfile,
   defaultPromptTemplate,
@@ -109,6 +110,20 @@ function executeQuery(input: {
 function bootstrapOperator(auth: AuthService, email: string): Session {
   const request = auth.requestMagicLink(email);
   const consumed = auth.consumeMagicLink(request.token);
-  auth.registerPasskey(consumed.operatorId, "local-passkey");
-  return auth.loginWithPasskey(consumed.operatorId, "local-passkey");
+  const passkey = createLocalPasskey();
+  const registration = auth.createPasskeyRegistrationOptions(consumed.operatorId);
+  auth.registerPasskey({
+    operatorId: consumed.operatorId,
+    credentialId: passkey.credentialId,
+    publicKeyPem: passkey.publicKeyPem,
+    challenge: registration.challenge,
+    signatureBase64Url: passkey.signChallenge(registration.challenge),
+  });
+  const authentication = auth.createPasskeyAuthenticationOptions(consumed.operatorId);
+  return auth.loginWithPasskey({
+    operatorId: consumed.operatorId,
+    credentialId: passkey.credentialId,
+    challenge: authentication.challenge,
+    signatureBase64Url: passkey.signChallenge(authentication.challenge),
+  });
 }

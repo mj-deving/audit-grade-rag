@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { createVerify, randomBytes } from "node:crypto";
 import type { LedgerEntry, Role } from "../../domain/types.js";
 import { sha256Hex, stableId } from "../../lib/hash.js";
 import type { Clock } from "../../lib/time.js";
@@ -11,6 +11,8 @@ export type Operator = {
   readonly role: Role;
   readonly status: "active" | "disabled" | "deleted";
   readonly passkeyRegistered: boolean;
+  readonly passkeyCredentialId: string | null;
+  readonly passkeyPublicKeyPem: string | null;
   readonly tombstoneHash: string | null;
 };
 
@@ -50,7 +52,16 @@ type AttemptWindow = {
   readonly attempts: number;
 };
 
+type PasskeyChallenge = {
+  readonly operatorId: string;
+  readonly challenge: string;
+  readonly purpose: "registration" | "authentication";
+  readonly expiresAtMs: number;
+  readonly consumedAtMs: number | null;
+};
+
 const magicLinkTtlMs = 10 * 60 * 1000;
+const passkeyChallengeTtlMs = 5 * 60 * 1000;
 const rateLimitWindowMs = 15 * 60 * 1000;
 const idleTimeoutMs = 30 * 60 * 1000;
 const absoluteTimeoutMs = 8 * 60 * 60 * 1000;
@@ -66,6 +77,7 @@ export class AuthService {
 
   private readonly operators = new Map<string, Operator>();
   private readonly challenges: Challenge[] = [];
+  private readonly passkeyChallenges: PasskeyChallenge[] = [];
   private readonly sessions = new Map<string, Session>();
   private readonly attempts = new Map<string, AttemptWindow>();
   private readonly deletionTombstones = new Map<string, string>();
@@ -112,16 +124,53 @@ export class AuthService {
     return { operatorId: operator.id, webauthnRegistrationRequired: !operator.passkeyRegistered };
   }
 
-  registerPasskey(operatorId: string, credentialId: string): Operator {
+  createPasskeyRegistrationOptions(operatorId: string): PasskeyOptions {
     const operator = this.requireOperator(operatorId);
-    const updated = { ...operator, passkeyRegistered: credentialId.length > 0 };
+    return this.createPasskeyChallenge(operator.id, "registration");
+  }
+
+  registerPasskey(input: PasskeyRegistrationInput): Operator {
+    const operator = this.requireOperator(input.operatorId);
+    this.consumePasskeyChallenge(operator.id, input.challenge, "registration");
+    if (!verifyPasskeySignature(input.publicKeyPem, input.challenge, input.signatureBase64Url)) {
+      throw new Error("WebAuthn registration failed");
+    }
+    const updated = {
+      ...operator,
+      passkeyRegistered: true,
+      passkeyCredentialId: input.credentialId,
+      passkeyPublicKeyPem: input.publicKeyPem,
+    };
     this.operators.set(operator.id, updated);
     return updated;
   }
 
-  loginWithPasskey(operatorId: string, credentialId: string): Session {
+  createPasskeyAuthenticationOptions(operatorId: string): PasskeyOptions {
     const operator = this.requireOperator(operatorId);
-    if (!operator.passkeyRegistered || credentialId.length === 0 || operator.status !== "active") {
+    if (!operator.passkeyRegistered || operator.status !== "active") {
+      throw new Error("WebAuthn login failed");
+    }
+    return this.createPasskeyChallenge(operator.id, "authentication");
+  }
+
+  loginWithPasskey(input: PasskeyAuthenticationInput): Session {
+    const operator = this.requireOperator(input.operatorId);
+    if (
+      !operator.passkeyRegistered ||
+      operator.passkeyCredentialId !== input.credentialId ||
+      operator.passkeyPublicKeyPem === null ||
+      operator.status !== "active"
+    ) {
+      throw new Error("WebAuthn login failed");
+    }
+    this.consumePasskeyChallenge(operator.id, input.challenge, "authentication");
+    if (
+      !verifyPasskeySignature(
+        operator.passkeyPublicKeyPem,
+        input.challenge,
+        input.signatureBase64Url,
+      )
+    ) {
       throw new Error("WebAuthn login failed");
     }
     const now = this.clock.now();
@@ -233,6 +282,8 @@ export class AuthService {
       role: "operator",
       status: "active",
       passkeyRegistered: false,
+      passkeyCredentialId: null,
+      passkeyPublicKeyPem: null,
       tombstoneHash: null,
     };
     this.operators.set(operator.id, operator);
@@ -255,11 +306,70 @@ export class AuthService {
     const now = this.clock.now();
     return session.expiresAtMs <= now || session.absoluteExpiresAtMs <= now;
   }
+
+  private createPasskeyChallenge(
+    operatorId: string,
+    purpose: PasskeyChallenge["purpose"],
+  ): PasskeyOptions {
+    const challenge = randomBytes(32).toString("base64url");
+    const expiresAtMs = this.clock.now() + passkeyChallengeTtlMs;
+    this.passkeyChallenges.push({
+      operatorId,
+      challenge,
+      purpose,
+      expiresAtMs,
+      consumedAtMs: null,
+    });
+    return { operatorId, challenge, expiresAtMs };
+  }
+
+  private consumePasskeyChallenge(
+    operatorId: string,
+    challenge: string,
+    purpose: PasskeyChallenge["purpose"],
+  ): void {
+    const found = this.passkeyChallenges.find(
+      (candidate) =>
+        candidate.operatorId === operatorId &&
+        candidate.challenge === challenge &&
+        candidate.purpose === purpose,
+    );
+    if (
+      found === undefined ||
+      found.consumedAtMs !== null ||
+      found.expiresAtMs <= this.clock.now()
+    ) {
+      throw new Error("WebAuthn challenge is invalid or expired");
+    }
+    const consumed = { ...found, consumedAtMs: this.clock.now() };
+    this.passkeyChallenges.splice(this.passkeyChallenges.indexOf(found), 1, consumed);
+  }
 }
 
 export type MagicLinkConsumption = {
   readonly operatorId: string;
   readonly webauthnRegistrationRequired: boolean;
+};
+
+export type PasskeyOptions = {
+  readonly operatorId: string;
+  readonly challenge: string;
+  readonly expiresAtMs: number;
+};
+
+export type PasskeyRegistrationInput = {
+  readonly operatorId: string;
+  readonly credentialId: string;
+  readonly publicKeyPem: string;
+  readonly challenge: string;
+  readonly signatureBase64Url: string;
+};
+
+export type PasskeyAuthenticationInput = {
+  readonly operatorId: string;
+  readonly credentialId: string;
+  readonly challenge: string;
+  readonly signatureBase64Url: string;
 };
 
 export class UnauthorizedError extends Error {
@@ -275,6 +385,17 @@ export function hashEmail(email: string): string {
 
 export function hashOperatorId(operatorId: string): string {
   return sha256Hex(operatorId);
+}
+
+function verifyPasskeySignature(
+  publicKeyPem: string,
+  challenge: string,
+  signatureBase64Url: string,
+): boolean {
+  const verifier = createVerify("SHA256");
+  verifier.update(challenge);
+  verifier.end();
+  return verifier.verify(publicKeyPem, Buffer.from(signatureBase64Url, "base64url"));
 }
 
 export function sessionCookieHeader(sessionId: string, policy: CookiePolicy): string {
