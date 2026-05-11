@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import type { AnswerOutcome } from "../../domain/types.js";
 import { canonicalJson } from "../../lib/canonical-json.js";
+import { defaultEmbeddingModel } from "../ingest/embedding.js";
 
 export type ExpectedOutcome = "answered" | "refused-out-of-corpus" | "blocked-unsafe";
 
@@ -217,7 +218,7 @@ function fixtureOutcome(
     validationErrors: [],
     modelVersion: "stub-llm@1.0.0",
     promptVersion: "1.0.0",
-    embeddingModelVersion: "bge-m3@stub-v1",
+    embeddingModelVersion: defaultEmbeddingModel,
     seed: 42,
     seedUnsupported: false,
     corpusSnapshotId: "snap_a",
