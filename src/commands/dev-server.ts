@@ -1,12 +1,12 @@
 import { createServer } from "node:http";
 import process from "node:process";
-import { createReferenceApp } from "../app/reference-app.js";
+import { createRuntimeApp } from "../app/runtime-app.js";
 import { defaultPassingEval } from "../modules/eval/eval.js";
 import { generateArticle50Report } from "../modules/report/report.js";
 import { renderAuthOperator, renderConsole, renderReportView } from "../modules/ui/console.js";
 
-const app = createReferenceApp();
-await app.ingest.ingest({ corpusDir: "examples/demo-corpus" });
+const app = createRuntimeApp({ clock: { now: () => Date.parse("2026-05-10T12:00:00.000Z") } });
+await app.ingest.ingest({ corpusDir: "examples/eu-ai-act" });
 const session = app.bootstrapOperator("operator@example.local");
 const query = app.query(session.id, "beantwortete Anfrage Audit-Zeile");
 const report = await generateArticle50Report(

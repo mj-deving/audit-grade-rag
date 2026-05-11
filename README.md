@@ -16,14 +16,15 @@
 
 </div>
 
-Audit-Grade RAG is a TypeScript reference implementation for organizations that
-need more than a chatbot UI. It treats every answer as an auditable event:
+Audit-Grade RAG is a TypeScript system for organizations that need more than a
+chatbot UI. It treats every answer as an auditable event:
 retrieved evidence is captured, claims are citation-checked, ledger rows are
 hash-chained and signed, replay drift is named, and Article 50 report bundles
 are reproducible from local state.
 
-The demo runs locally with deterministic providers. No cloud credentials, no
-third-party JavaScript, and no analytics are needed to try the product surface.
+The local development profile runs with deterministic provider settings. No
+cloud credentials, no third-party JavaScript, and no analytics are needed to
+try the product surface.
 
 ## Screenshots
 
@@ -37,7 +38,7 @@ third-party JavaScript, and no analytics are needed to try the product surface.
 
 ## Why This Exists
 
-Most RAG demos optimize for the answer box. Regulated operators need the
+Most RAG tools optimize for the answer box. Regulated operators need the
 surrounding evidence:
 
 - What corpus snapshot was active?
@@ -66,9 +67,12 @@ after-the-fact logging.
 ## Five-Minute Install
 
 ```bash
+git clone https://github.com/mj-deving/audit-grade-rag.git
+cd audit-grade-rag
 corepack enable
 pnpm install --frozen-lockfile
-pnpm check:full
+docker-compose up -d postgres
+pnpm ingest --corpus ./examples/eu-ai-act
 pnpm dev
 ```
 
@@ -78,7 +82,7 @@ Open:
 http://127.0.0.1:3000/console
 ```
 
-The dev server bootstraps a demo operator, ingests `examples/demo-corpus`, runs a
+The dev server bootstraps an operator, uses `examples/eu-ai-act`, runs a
 deterministic query, and renders the console with answer, citation, evidence
 cards, and audit state.
 
@@ -86,7 +90,7 @@ cards, and audit state.
 
 ```bash
 # Preview ingestion without writing rows.
-pnpm ingest --corpus examples/demo-corpus --dry-run
+pnpm ingest --corpus examples/eu-ai-act --dry-run
 
 # Export a sealed ledger excerpt.
 pnpm audit:export \
@@ -111,7 +115,7 @@ pnpm report \
 ## Architecture
 
 ```text
-src/app/              Reference app composition
+src/app/              Runtime composition
 src/commands/         CLI and dev-server entrypoints
 src/domain/           Shared domain types
 src/modules/auth/     Operator auth and session state
@@ -124,7 +128,7 @@ src/modules/eval/     Golden-set parser and thresholds
 src/modules/report/   Article 50 report bundle
 src/modules/ui/       German operator-console HTML/CSS
 docs/                 Operator, security, audit, replay, and report docs
-examples/demo-corpus/ Demo PDF/DOCX/Markdown corpus fixtures
+examples/eu-ai-act/   PDF/DOCX/Markdown corpus fixtures
 ```
 
 ### Request Path
@@ -181,11 +185,11 @@ http://127.0.0.1:3000/console
 
 ## Current Scope
 
-This repository is a reference implementation, not a production deployment. It
-is single-tenant and one-corpus by design. The local demo uses deterministic
-stub providers; production profiles must supply real storage, WebAuthn
-ceremonies, provider credentials, TLS, key management, disk encryption, backups,
-and retention policy enforcement.
+This repository targets a single-tenant, one-corpus v1 deployment. The local
+development profile is deterministic so replay and report gates are testable;
+production profiles must supply configured storage, WebAuthn ceremonies,
+provider credentials, TLS, key management, disk encryption, backups, and
+retention policy enforcement.
 
 Cloud LLM replay is not advertised as indefinitely byte-stable. Cloud byte
 mismatches are reported as replay drift unless the configured provider profile

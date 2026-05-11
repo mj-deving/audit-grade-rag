@@ -1,8 +1,25 @@
 services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_DB: audit_grade_rag
+      POSTGRES_USER: audit_grade_rag
+      POSTGRES_PASSWORD: audit_grade_rag
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U audit_grade_rag -d audit_grade_rag"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
   audit-grade-rag:
     build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
     environment:
       PORT: "3000"
+      DATABASE_URL: "postgres://audit_grade_rag:audit_grade_rag@postgres:5432/audit_grade_rag"
     ports:
       - "3000:3000"
     command: pnpm dev

@@ -163,7 +163,7 @@ function renderRail(current: "console" | "reports"): string {
       </nav>
       <div class="rail-status">
         <p class="rail-label">Betriebsmodus</p>
-        <strong>Lokaler Audit-Demo-Lauf</strong>
+        <strong>Lokaler Audit-Lauf</strong>
       </div>
     </aside>
   `;
