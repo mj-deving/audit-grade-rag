@@ -212,19 +212,27 @@ function renderQueryPanel(result: QueryResult): string {
 }
 
 function renderAnswer(result: QueryResult): string {
+  const chunksById = new Map(result.retrievedChunks.map((chunk) => [chunk.chunkId, chunk]));
   return `<div class="answer-copy">${result.claims
     .map(
       (claim) =>
         `<p>${escapeHtml(claim.text)} ${claim.citations
-          .map(
-            (citation) =>
-              `<button class="citation-pill" data-chunk="${escapeHtml(citation.chunkId)}" aria-label="Korpusstelle ${escapeHtml(
-                citation.chunkId,
-              )} anzeigen">${shortHash(citation.chunkId)}</button>`,
-          )
+          .map((citation) => renderCitationLink(citation.chunkId, chunksById.get(citation.chunkId)))
           .join(" ")}</p>`,
     )
     .join("")}</div>`;
+}
+
+function renderCitationLink(chunkId: string, chunk: RetrievedChunk | undefined): string {
+  const href =
+    chunk === undefined
+      ? `#${escapeHtml(chunkId)}`
+      : `/source/${escapeHtml(chunk.docId)}/page/${String(chunk.pageStart)}?char_offset=${String(
+          chunk.charStart,
+        )}#${escapeHtml(chunk.chunkId)}`;
+  return `<a class="citation-pill" data-chunk="${escapeHtml(chunkId)}" href="${href}" aria-label="Korpusstelle ${escapeHtml(
+    chunkId,
+  )} bei Zeichenposition ${String(chunk?.charStart ?? 0)} anzeigen">${shortHash(chunkId)}</a>`;
 }
 
 function renderChunks(chunks: readonly RetrievedChunk[]): string {
@@ -255,7 +263,7 @@ function renderChunkPreview(chunk: RetrievedChunk): string {
         <dt>Seite</dt><dd>${String(chunk.pageStart)}</dd>
         <dt>Offset</dt><dd>${String(chunk.charStart)}-${String(chunk.charEnd)}</dd>
       </dl>
-      <a class="source-link" href="/source/${escapeHtml(chunk.docId)}/page/${String(chunk.pageStart)}">Quelle oeffnen</a>
+      <a class="source-link" href="/source/${escapeHtml(chunk.docId)}/page/${String(chunk.pageStart)}?char_offset=${String(chunk.charStart)}#${escapeHtml(chunk.chunkId)}">Quelle oeffnen</a>
     </article>
   `;
 }

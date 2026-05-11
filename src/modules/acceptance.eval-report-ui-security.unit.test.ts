@@ -82,6 +82,7 @@ it("renders German console, source, report, CSP, citations, and no analytics", a
   expect(auth.html).not.toMatch(/password/iu);
   expect(consoleView.html).toContain("Korpusfrage");
   expect(consoleView.html).toContain("citation-pill");
+  expect(consoleView.html).toContain("char_offset=");
   expect(consoleView.html).toContain("Audit-Spur");
   expect(source.html).toContain("<mark>");
   expect(reportView.html).toContain("Artikel-50");
