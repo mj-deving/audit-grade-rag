@@ -254,3 +254,16 @@ export function hashEmail(email: string): string {
 export function hashOperatorId(operatorId: string): string {
   return sha256Hex(operatorId);
 }
+
+export function sessionCookieHeader(sessionId: string, policy: CookiePolicy): string {
+  return [
+    `agr_session=${encodeURIComponent(sessionId)}`,
+    "Path=/",
+    `Max-Age=${String(policy.maxAgeSeconds)}`,
+    "HttpOnly",
+    "Secure",
+    `SameSite=${policy.sameSite}`,
+  ]
+    .filter((part) => part.length > 0)
+    .join("; ");
+}

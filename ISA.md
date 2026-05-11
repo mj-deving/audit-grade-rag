@@ -74,7 +74,7 @@ Deliver a self-hostable, open-source-auditable RAG application that ingests one 
 
 - [ ] ISC-1: Operator login at `/auth/operator` accepts an email, sends a 10-minute-expiry magic link, and creates a session bound to a WebAuthn passkey on first login.
 - [ ] ISC-2: Subsequent logins require WebAuthn passkey only; magic-link flow is recovery-only and rate-limited (5 attempts / 15 min / email).
-- [ ] ISC-3: Session cookie is `HttpOnly; Secure; SameSite=Strict`; idle timeout 30 min; absolute lifetime 8 h.
+- [x] ISC-3: Session cookie is `HttpOnly; Secure; SameSite=Strict`; idle timeout 30 min; absolute lifetime 8 h.
 - [x] ISC-4: Operator console German UI ships with all error messages, button labels, audit panels, and report-generation copy in `de-DE`; `Accept-Language` parsing exists but `de-DE` is the only fully translated locale in v1.
 - [x] ISC-5: Anti: `/auth/operator` does not accept passwords; password fields do not exist in the database schema.
 - [x] ISC-6: Anti: No anonymous query path. `GET /api/query` without a session returns `401`.
