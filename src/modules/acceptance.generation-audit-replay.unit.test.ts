@@ -58,6 +58,16 @@ it("returns cited answers with pinned model, prompt, temperature, and seed", () 
   });
   expect(valid.claims[0]?.citations[0]?.chunkId).toBe("chunk_a");
   expect(renderPrompt("Q", trace.finalChunks)).toContain("[chunk:chunk_a]");
+  expect(
+    generateAnswer({
+      query: "Auditpflicht Antworten",
+      trace,
+      corpusSnapshotId: "snap_a",
+      corpusSnapshotHash: "hash_a",
+      provider: new DeterministicStubProvider(["CLAIM: Pflicht gilt. [chunk:chunk_a]"]),
+      seed: 7,
+    }).seed,
+  ).toBe(7);
 });
 
 // No mocks: regeneration and block behavior use real validation failures.
