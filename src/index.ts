@@ -16,10 +16,15 @@ export {
 export { AuthService, hashEmail, hashOperatorId, UnauthorizedError } from "./modules/auth/auth.js";
 export type { EvalMetrics, EvalRun, ExpectedOutcome, GoldenCase } from "./modules/eval/eval.js";
 export {
+  defaultCorpusFixtureDir,
+  defaultGoldenSetPath,
   defaultPassingEval,
+  evalThresholds,
   evaluateGoldenSet,
   loadGoldenSet,
   parseGoldenSet,
+  pinnedEvalTuple,
+  runGoldenEvaluation,
 } from "./modules/eval/eval.js";
 export {
   DeterministicStubProvider,
