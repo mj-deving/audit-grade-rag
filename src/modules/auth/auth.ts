@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import type { Role } from "../../domain/types.js";
+import type { LedgerEntry, Role } from "../../domain/types.js";
 import { sha256Hex, stableId } from "../../lib/hash.js";
 import type { Clock } from "../../lib/time.js";
 import { systemClock } from "../../lib/time.js";
@@ -68,6 +68,7 @@ export class AuthService {
   private readonly challenges: Challenge[] = [];
   private readonly sessions = new Map<string, Session>();
   private readonly attempts = new Map<string, AttemptWindow>();
+  private readonly deletionTombstones = new Map<string, string>();
 
   constructor(
     private readonly ledger: AuditLedger,
@@ -156,9 +157,16 @@ export class AuthService {
 
   tombstoneOperator(operatorId: string): Operator {
     const operator = this.requireOperator(operatorId);
+    const originalUserIdHash = hashOperatorId(operator.id);
     const tombstoneHash = sha256Hex(`${operator.id}:${operator.emailHash}:deleted`);
-    const updated = { ...operator, status: "deleted" as const, tombstoneHash };
+    const updated = {
+      ...operator,
+      emailHash: tombstoneHash,
+      status: "deleted" as const,
+      tombstoneHash,
+    };
     this.operators.set(operator.id, updated);
+    this.deletionTombstones.set(originalUserIdHash, tombstoneHash);
     for (const [sessionId, session] of this.sessions) {
       if (session.operatorId === operatorId) {
         this.sessions.delete(sessionId);
@@ -167,11 +175,25 @@ export class AuthService {
     this.ledger.append({
       entryType: "operator.identity.deleted",
       outcome: "operator-identity-deleted",
-      userIdHash: hashOperatorId(operator.id),
+      userIdHash: tombstoneHash,
       timestampMs: this.clock.now(),
       extra: { tombstoneHash },
     });
     return updated;
+  }
+
+  retentionLedgerEntries(): readonly LedgerEntry[] {
+    return this.ledger.entries().map((entry) => {
+      const tombstoneHash = this.deletionTombstones.get(entry.userIdHash);
+      if (tombstoneHash === undefined) {
+        return entry;
+      }
+      return {
+        ...entry,
+        userIdHash: tombstoneHash,
+        metadata: { ...entry.metadata, operatorIdentityDeleted: true, tombstoneHash },
+      };
+    });
   }
 
   schemaColumns(): readonly string[] {
