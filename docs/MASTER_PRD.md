@@ -2429,7 +2429,7 @@ A self-hostable Next.js + Hono application at `audit-grade-rag.example.local` wh
 - [x] **ISC-48**: `pnpm check:full` runs typecheck + Biome + ESLint + knip + Vitest (unit + integration) + e2e (`agent-browser`-driven) + eval harness, and exits 0. — Test recipe: L1 unit proof for the build, test, ship (goalmode contract) rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 - [x] **ISC-49**: lefthook fast gate runs at every commit; pre-push runs integration; CI runs `pnpm check:full` on every push. — Test recipe: L1 unit proof for the build, test, ship (goalmode contract) rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 - [x] **ISC-50**: README ships a 5-minute install: `git clone && pnpm install && docker-compose up postgres && pnpm ingest --corpus ./examples/eu-ai-act && pnpm dev` produces a working operator console. — Test recipe: L1 unit proof for the build, test, ship (goalmode contract) rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
-- [ ] **ISC-51**: Anti: No commit lands on `main` with a failing CI run. Branch-protection rules enforce this on the GitHub side. — Test recipe: L1 unit proof for the build, test, ship (goalmode contract) rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
+- [x] **ISC-51**: Anti: No commit lands on `main` with a failing CI run. Branch-protection rules enforce this on the GitHub side. — Test recipe: L1 unit proof for the build, test, ship (goalmode contract) rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 
 ## §10. Anti-requirements
 ### §10.1 ISA Principles Lift
@@ -2473,15 +2473,15 @@ A self-hostable Next.js + Hono application at `audit-grade-rag.example.local` wh
 - Do NOT satisfy Postgres, pgvector, SQLite ledger, Ed25519 signing, Typst PDF, WebAuthn, CSP, or branch-protection criteria with stubs when the ISA requires real behavior.
 
 ## §11. Definition of Done
-- [ ] Every ISC-N in `ISA.md` has a corresponding `[x]` line in §9 of this PRD with a passing test named in the related §8 recipe.
-- [ ] `bun ~/.claude/skills/GoalMode/Tools/ReconcileCheck.ts ISA.md docs/MASTER_PRD.md` exits 0.
-- [ ] `pnpm check:full` exits 0.
-- [ ] `pnpm build` exits 0.
-- [ ] No new TODO comments are introduced.
-- [ ] A completion report is appended to §13.
-- [ ] `ISA.md` ISC-N checkboxes mirror PRD §9 state.
-- [ ] `pnpm check:fast` passed before every implementation commit.
-- [ ] No test skip, force push, or no-verify bypass was used.
+- [x] Every ISC-N in `ISA.md` has a corresponding `[x]` line in §9 of this PRD with a passing test named in the related §8 recipe.
+- [x] `bun ~/.claude/skills/GoalMode/Tools/ReconcileCheck.ts ISA.md docs/MASTER_PRD.md` exits 0.
+- [x] `pnpm check:full` exits 0.
+- [x] `pnpm build` exits 0.
+- [x] No new TODO comments are introduced.
+- [x] A completion report is appended to §13.
+- [x] `ISA.md` ISC-N checkboxes mirror PRD §9 state.
+- [x] `pnpm check:fast` passed before every implementation commit.
+- [x] No test skip, force push, or no-verify bypass was used.
 
 ## §12. Assumptions and Open Questions
 ### §12.1 Freeze Assumptions
@@ -2548,6 +2548,8 @@ A self-hostable Next.js + Hono application at `audit-grade-rag.example.local` wh
 - 2026-05-11T09:14:24+02:00 — ISC-50 closed: README five-minute install now documents the clone, install, Postgres, DATABASE_URL, ingest, dev, and `/console` path, and local verification confirmed the console responds.
 - 2026-05-11T09:14:24+02:00 — STUCK ISC-51: tried GitHub branch-protection read, repository ruleset read, and branch-protection update against `mj-deving/audit-grade-rag`; all returned GitHub 403 requiring GitHub Pro or a public repository, so I need the repository made public, upgraded, or an admin-created protection rule before this can close.
 - 2026-05-11T09:22:09+02:00 — ISC-51 support note: latest remote CI failed before tests because `pnpm/action-setup` duplicated the package-manager version; workflow now lets `packageManager` select pnpm and installs Typst plus poppler for the full report gate, but branch protection remains blocked by GitHub plan limits.
+- 2026-05-11T09:39:58+02:00 — ISC-51 closed: repository is public, `main` is the default branch, GitHub Actions `ci/check-full` passed on `ab2ca3d`, and `main` branch protection requires strict `check-full` status checks with admin enforcement, force-push disabled, and deletion disabled.
+- 2026-05-11T09:39:58+02:00 — Completion report: Phase A rebuilt and froze `docs/MASTER_PRD.md` from `ISA.md`; Phase B implemented ISC-1..ISC-51 to the ISA bar; ReconcileCheck, `pnpm check:full`, `pnpm build`, GitHub CI, and GitHub branch protection are all green on the final contract state.
 
 ## Appendix A. ISA Decisions Lift
 - **2026-05-10 — Initial scaffold.** Project seeded from the GoalMode skill use-case and the Audit-Grade RAG recommendation in the Bootoshi-blueprint scoping conversation. ISA seeded at E5 because the project will be driven end-to-end by Codex `/goal` mode per `~/.claude/skills/GoalMode/Workflows/MasterPRD.md`, and the GoalMode workflow expects a ≥1500-line Master PRD downstream of an ISA dense enough to make expansion mechanical rather than design-from-scratch.
