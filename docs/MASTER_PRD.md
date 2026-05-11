@@ -1,5 +1,5 @@
 ---
-Status: FROZEN
+Status: MODIFIED
 Document version: 2.0.0
 Source brief: ./ISA.md
 Project: audit-grade-rag
@@ -14,7 +14,7 @@ Workflow: GoalMode MasterPRD Phase 1-5 rebuild
 ## §0. Frontmatter and ISA Lock
 - Author: Codex.
 - Created: 2026-05-11.
-- Status: FROZEN.
+- Status: MODIFIED.
 - Codex model: GPT-5.5 lineage.
 - Codex reasoning effort: high.
 - ISA source: `./ISA.md`.
@@ -41,7 +41,7 @@ Off-the-shelf retrieval-augmented-generation products (LangChain Cloud, LlamaInd
 
 ## §2. Vision
 ### §2.1 Vision Lifted From ISA.Vision
-A self-hostable Next.js + Hono application at `audit-grade-rag.example.local` where a compliance officer pastes a question, the operator console shows the answer with every claim citation-linked to the exact chunk in the exact source PDF page, the audit trail panel shows the SHA-256 hash chain entry that records the (query, retrieved chunks, generated answer, model version, prompt version, seed, timestamp, user) tuple, the "Replay" button reproduces the answer bit-for-bit from that ledger entry six months later, the "Generate AI Act §50 disclosure" button emits a regulator-shaped PDF the BaFin/BaSt/Aufsichtsbehörde can read without translation, and the eval-harness dashboard shows current groundedness / citation-accuracy / refusal-correctness scores against a versioned golden set with adversarial cases. Euphoric surprise: a Sparkasse compliance team that previously told their developers "RAG is forbidden until compliance signs off" runs this against a sample BaFin-Rundschreiben corpus on Monday, generates the §50 disclosure on Tuesday, and on Wednesday the Bereichsleiter-Compliance asks engineering to deploy it across the whole Beratungsabteilung — because the audit story is no longer hand-waving but an open-source-auditable system the Innenrevision can read.
+A self-hostable Hono SSR application at `audit-grade-rag.example.local` where a compliance officer pastes a question, the operator console shows the answer with every claim citation-linked to the exact chunk in the exact source PDF page, the audit trail panel shows the SHA-256 hash chain entry that records the (query, retrieved chunks, generated answer, model version, prompt version, seed, timestamp, user) tuple, the "Replay" button reproduces the answer bit-for-bit from that ledger entry six months later, the "Generate AI Act §50 disclosure" button emits a regulator-shaped PDF the BaFin/BaSt/Aufsichtsbehörde can read without translation, and the eval-harness dashboard shows current groundedness / citation-accuracy / refusal-correctness scores against a versioned golden set with adversarial cases. Euphoric surprise: a Sparkasse compliance team that previously told their developers "RAG is forbidden until compliance signs off" runs this against a sample BaFin-Rundschreiben corpus on Monday, generates the §50 disclosure on Tuesday, and on Wednesday the Bereichsleiter-Compliance asks engineering to deploy it across the whole Beratungsabteilung — because the audit story is no longer hand-waving but an open-source-auditable system the Innenrevision can read.
 
 ### §2.2 Instrumented End State
 - The operator can authenticate without passwords and recover only through a rate-limited email bootstrap path.
@@ -100,7 +100,7 @@ A self-hostable Next.js + Hono application at `audit-grade-rag.example.local` wh
 | `feat/replay-tool` | Bit-equal replay against ledger entries; ReplayDriftError on drift | ISC-27..29 | feat/audit-ledger, feat/generation-cited | no |
 | `feat/eval-harness` | Adversarial golden set + scorer + threshold gate; integrated into `check:full` | ISC-30..34 | feat/generation-cited | yes |
 | `feat/regulator-report` | EU AI Act §50 PDF + JSON + sealed-excerpt zip via Typst | ISC-35..38 | feat/audit-ledger, feat/eval-harness | no |
-| `feat/operator-console` | Next.js operator UI: query / chunks / answer / audit / replay / report | ISC-39..43 | feat/auth-passkey, feat/generation-cited, feat/regulator-report | no |
+| `feat/operator-console` | Hono SSR operator UI: query / chunks / answer / audit / replay / report | ISC-39..43 | feat/auth-passkey, feat/generation-cited, feat/regulator-report | no |
 | `feat/dsgvo-baseline` | Logger redaction, deletion tombstones, residency doc, egress allowlist | ISC-44..47 | — | yes |
 | `feat/devloop` | GoalMode-style guardrail stack: TS strict, Biome, ESLint, knip, lefthook, CI, pnpm check:full | ISC-48..51 | — | first (gates everything else) |
 
@@ -1975,16 +1975,16 @@ A self-hostable Next.js + Hono application at `audit-grade-rag.example.local` wh
 - Non-live contract: when `RUN_LIVE_TESTS` is not `1`, the test records a structured disabled-gate assertion; it does not pretend a passkey ceremony occurred.
 - Product obligation: password state or email-only auth cannot satisfy this L4 row.
 
-### §7.5.6 Next.js UI Framework Live Integration
+### §7.5.6 Hono SSR UI Framework Live Integration
 - Declared provider category: UI framework.
-- Declared provider keyword: Next.js.
+- Declared provider keyword: Hono.
 - Served ISC-N: ISC-39, ISC-40, ISC-41, ISC-42, ISC-43, ISC-48, ISC-49.
-- L4 test file: `tests/integration-live/nextjs.spec.ts`.
+- L4 test file: `tests/integration-live/hono-ssr.spec.ts`.
 - Execution contract: `pnpm test:integration:live` invokes this test through the `integration-live` Vitest project, and `pnpm check:full` chains that script after L2 integration.
-- Environment contract: when `RUN_LIVE_TESTS=1`, the `next` package must resolve locally and expose a major version compatible with the ISA's Next.js 15 declaration.
-- Fail-loud rule: if `RUN_LIVE_TESTS=1` and the package is absent or resolves to an incompatible major version, the test fails with the provider name and package requirement in the error text.
+- Environment contract: when `RUN_LIVE_TESTS=1`, the `hono` package must resolve locally and the real Hono HTTP app must render the operator-console SSR route with a self-only CSP.
+- Fail-loud rule: if `RUN_LIVE_TESTS=1` and Hono is absent, the app cannot instantiate, console landmarks are missing, or CSP drifts from `default-src 'self'`, the test fails with the provider name and route evidence in the error text.
 - Non-live contract: when `RUN_LIVE_TESTS` is not `1`, the test records a structured disabled-gate assertion; it does not pretend a UI framework invocation occurred.
-- Product obligation: Hono-rendered development HTML cannot satisfy this L4 row while the ISA still declares Next.js 15.
+- Product obligation: the chosen UI framework for v1 is Hono SSR strings, not a separate Next.js runtime.
 
 ## §8. Test Strategy
 ### §8.1 ISA Test Strategy Lift
@@ -2426,8 +2426,8 @@ A self-hostable Next.js + Hono application at `audit-grade-rag.example.local` wh
 
 ## §9. Acceptance Criteria
 ### §9.1 Identity, session, and operator console
-- [x] **ISC-1**: Operator login at `/auth/operator` accepts an email, sends a 10-minute-expiry magic link, and creates a session bound to a WebAuthn passkey on first login. — Test recipe: L1 unit proof for the identity, session, and operator console rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
-- [x] **ISC-2**: Subsequent logins require WebAuthn passkey only; magic-link flow is recovery-only and rate-limited (5 attempts / 15 min / email). — Test recipe: L1 unit proof for the identity, session, and operator console rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
+- [ ] **ISC-1**: Operator login at `/auth/operator` accepts an email, sends a 10-minute-expiry magic link, and creates a session bound to a WebAuthn passkey on first login. — Test recipe: L1 unit proof for the identity, session, and operator console rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
+- [ ] **ISC-2**: Subsequent logins require WebAuthn passkey only; magic-link flow is recovery-only and rate-limited (5 attempts / 15 min / email). — Test recipe: L1 unit proof for the identity, session, and operator console rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 - [x] **ISC-3**: Session cookie is `HttpOnly; Secure; SameSite=Strict`; idle timeout 30 min; absolute lifetime 8 h. — Test recipe: L1 unit proof for the identity, session, and operator console rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 - [x] **ISC-4**: Operator console German UI ships with all error messages, button labels, audit panels, and report-generation copy in `de-DE`; `Accept-Language` parsing exists but `de-DE` is the only fully translated locale in v1. — Test recipe: L1 unit proof for the identity, session, and operator console rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 - [x] **ISC-5**: Anti: `/auth/operator` does not accept passwords; password fields do not exist in the database schema. — Test recipe: L1 unit proof for the identity, session, and operator console rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
@@ -2435,19 +2435,19 @@ A self-hostable Next.js + Hono application at `audit-grade-rag.example.local` wh
 
 ### §9.2 Corpus ingestion and indexing
 - [x] **ISC-7**: `pnpm ingest --corpus <dir>` walks a watched directory, extracts text from PDF / DOCX / Markdown, OCRs scanned PDFs via tesseract, chunks at 800-token windows with 100-token overlap, and writes `(doc_id, page, char_offset, chunk_text)` rows to Postgres. — Test recipe: L1 unit proof for the corpus ingestion and indexing rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
-- [x] **ISC-8**: Each chunk row is embedded via the configured embedding model and indexed in `pgvector` HNSW with `m=16, ef_construction=128`. — Test recipe: L1 unit proof for the corpus ingestion and indexing rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
+- [ ] **ISC-8**: Each chunk row is embedded via the configured embedding model and indexed in `pgvector` HNSW with `m=16, ef_construction=128`. — Test recipe: L1 unit proof for the corpus ingestion and indexing rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 - [x] **ISC-9**: Re-ingestion of an unchanged document is a no-op (content hash check); a changed document creates a new `corpus_snapshot_id` and the previous chunks remain queryable for replay. — Test recipe: L1 unit proof for the corpus ingestion and indexing rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 - [x] **ISC-10**: A `corpus_snapshot_id` is recorded in the audit ledger for every query so old answers replay against the corpus state they were generated against. — Test recipe: L1 unit proof for the corpus ingestion and indexing rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
-- [x] **ISC-11**: `pnpm ingest --dry-run` reports document count, chunk count, embedding-model name, and estimated index size without writing. — Test recipe: L1 unit proof for the corpus ingestion and indexing rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
+- [ ] **ISC-11**: `pnpm ingest --dry-run` reports document count, chunk count, embedding-model name, and estimated index size without writing. — Test recipe: L1 unit proof for the corpus ingestion and indexing rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 
 ### §9.3 Retrieval
-- [x] **ISC-12**: Hybrid retrieval: BM25 (top-50) + dense vector (top-50) merged via reciprocal-rank fusion to a final top-K (default K=8, configurable per query 1..20). — Test recipe: L1 unit proof for the retrieval rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
+- [ ] **ISC-12**: Hybrid retrieval: BM25 (top-50) + dense vector (top-50) merged via reciprocal-rank fusion to a final top-K (default K=8, configurable per query 1..20). — Test recipe: L1 unit proof for the retrieval rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 - [x] **ISC-13**: Each retrieved chunk carries `(chunk_id, doc_id, page, char_offset, retrieval_score, retrieval_method)` in the response payload. — Test recipe: L1 unit proof for the retrieval rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 - [x] **ISC-14**: Anti: Retrieval never returns chunks from a `corpus_snapshot_id` other than the one bound to the active query. — Test recipe: L1 unit proof for the retrieval rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 - [x] **ISC-15**: A `relevance_score < 0.3` retrieval result for ALL top-K chunks triggers a structured `OutOfCorpus` answer instead of a generated response. — Test recipe: L1 unit proof for the retrieval rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 
 ### §9.4 Generation and per-claim citation
-- [x] **ISC-16**: LLM call uses `temperature=0`, fixed seed (default `42`, configurable), frozen `model_version`, frozen `prompt_version` (e.g. `prompts/answer/v3.tmpl`). — Test recipe: L1 unit proof for the generation and per-claim citation rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
+- [ ] **ISC-16**: LLM call uses `temperature=0`, fixed seed (default `42`, configurable), frozen `model_version`, frozen `prompt_version` (e.g. `prompts/answer/v3.tmpl`). — Test recipe: L1 unit proof for the generation and per-claim citation rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 - [x] **ISC-17**: The generation prompt instructs the model to emit assertions tagged with `[chunk:<chunk_id>]` markers; the response parser extracts assertions and their citation lists. — Test recipe: L1 unit proof for the generation and per-claim citation rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 - [x] **ISC-18**: A post-generation validator rejects any assertion lacking at least one valid `chunk_id` reference; rejected outputs trigger one regeneration attempt with the validator feedback in the prompt; second failure surfaces a structured `UngroundedGenerationError` to the operator. — Test recipe: L1 unit proof for the generation and per-claim citation rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 - [x] **ISC-19**: Anti: An answer with at least one uncited claim is never returned to the operator. The validator block is itself recorded in the audit ledger. — Test recipe: L1 unit proof for the generation and per-claim citation rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
@@ -2462,15 +2462,15 @@ A self-hostable Next.js + Hono application at `audit-grade-rag.example.local` wh
 - [x] **ISC-26**: Anti: There is no SQL `UPDATE` or `DELETE` path on the ledger table in application code; only `INSERT`. A regression test enforces this via grep + parse. — Test recipe: L1 unit proof for the audit ledger rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 
 ### §9.6 Replay
-- [x] **ISC-27**: `audit-replay <ledger.sqlite> <entry-id>` re-issues the same query against the same `corpus_snapshot_id`, with the same model/prompt/embedding versions and seed, and asserts byte-equality with the original `generated_answer`. — Test recipe: L1 unit proof for the replay rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
-- [x] **ISC-28**: Replay against a drifted artifact (corpus snapshot purged, model version retired, prompt version edited) returns a structured `ReplayDriftError` naming the drifted artifact and exits non-zero. Never silently produces a different answer. — Test recipe: L1 unit proof for the replay rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
-- [x] **ISC-29**: A replay run is itself ledgered (with `outcome=replay-success` or `outcome=replay-drift`) so a regulator can see who replayed what when. — Test recipe: L1 unit proof for the replay rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
+- [ ] **ISC-27**: `audit-replay <ledger.sqlite> <entry-id>` re-issues the same query against the same `corpus_snapshot_id`, with the same model/prompt/embedding versions and seed, and asserts byte-equality with the original `generated_answer`. — Test recipe: L1 unit proof for the replay rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
+- [ ] **ISC-28**: Replay against a drifted artifact (corpus snapshot purged, model version retired, prompt version edited) returns a structured `ReplayDriftError` naming the drifted artifact and exits non-zero. Never silently produces a different answer. — Test recipe: L1 unit proof for the replay rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
+- [ ] **ISC-29**: A replay run is itself ledgered (with `outcome=replay-success` or `outcome=replay-drift`) so a regulator can see who replayed what when. — Test recipe: L1 unit proof for the replay rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 
 ### §9.7 Eval harness
 - [x] **ISC-30**: Golden set lives at `eval/golden/v<N>.jsonl` with `{question, expected_outcome, expected_chunks?, tags[]}`. Tags include `ambiguous`, `out-of-corpus`, `contradictory`, `multi-hop`, `numerical`. — Test recipe: L1 unit proof for the eval harness rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
-- [x] **ISC-31**: `pnpm eval` runs all golden questions against a pinned (model, prompt, corpus_snapshot) tuple and outputs `groundedness`, `citation-accuracy`, `refusal-correctness`, and per-tag breakdowns. — Test recipe: L1 unit proof for the eval harness rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
-- [x] **ISC-32**: Eval thresholds: groundedness ≥ 0.95, citation-accuracy ≥ 0.95, refusal-correctness ≥ 0.90. Fall below threshold → `pnpm eval` exits non-zero. — Test recipe: L1 unit proof for the eval harness rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
-- [x] **ISC-33**: The eval harness is part of `pnpm check:full` and therefore part of the GoalMode-style done-contract. — Test recipe: L1 unit proof for the eval harness rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
+- [ ] **ISC-31**: `pnpm eval` runs all golden questions against a pinned (model, prompt, corpus_snapshot) tuple and outputs `groundedness`, `citation-accuracy`, `refusal-correctness`, and per-tag breakdowns. — Test recipe: L1 unit proof for the eval harness rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
+- [ ] **ISC-32**: Eval thresholds: groundedness ≥ 0.95, citation-accuracy ≥ 0.95, refusal-correctness ≥ 0.90. Fall below threshold → `pnpm eval` exits non-zero. — Test recipe: L1 unit proof for the eval harness rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
+- [ ] **ISC-33**: The eval harness is part of `pnpm check:full` and therefore part of the GoalMode-style done-contract. — Test recipe: L1 unit proof for the eval harness rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 - [x] **ISC-34**: Anti: `pnpm eval` does not pass on an empty golden set. Empty-set runs are explicit failures. — Test recipe: L1 unit proof for the eval harness rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 
 ### §9.8 Regulator report (EU AI Act §50)
@@ -2493,7 +2493,7 @@ A self-hostable Next.js + Hono application at `audit-grade-rag.example.local` wh
 - [x] **ISC-47**: Anti: No PII or query content is ever sent to a non-LLM-provider third-party in v1. — Test recipe: L1 unit proof for the dsgvo / compliance baseline rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 
 ### §9.11 Build, test, ship (GoalMode contract)
-- [x] **ISC-48**: `pnpm check:full` runs typecheck + Biome + ESLint + knip + Vitest (unit + integration) + e2e (`agent-browser`-driven) + eval harness, and exits 0. — Test recipe: L1 unit proof for the build, test, ship (goalmode contract) rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
+- [ ] **ISC-48**: `pnpm check:full` runs typecheck + Biome + ESLint + knip + Vitest (unit + integration) + e2e (`agent-browser`-driven) + eval harness, and exits 0. — Test recipe: L1 unit proof for the build, test, ship (goalmode contract) rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 - [x] **ISC-49**: lefthook fast gate runs at every commit; pre-push runs integration; CI runs `pnpm check:full` on every push. — Test recipe: L1 unit proof for the build, test, ship (goalmode contract) rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 - [x] **ISC-50**: README ships a 5-minute install: `git clone && pnpm install && docker-compose up postgres && pnpm ingest --corpus ./examples/eu-ai-act && pnpm dev` produces a working operator console. — Test recipe: L1 unit proof for the build, test, ship (goalmode contract) rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
 - [x] **ISC-51**: Anti: No commit lands on `main` with a failing CI run. Branch-protection rules enforce this on the GitHub side. — Test recipe: L1 unit proof for the build, test, ship (goalmode contract) rule; L2 integration proof against the real owned boundary; L3 user or CLI flow proof where the behavior crosses the product boundary.
@@ -2511,7 +2511,7 @@ A self-hostable Next.js + Hono application at `audit-grade-rag.example.local` wh
 - **Self-hostable means actually self-hostable.** No required SaaS dependencies in the critical path. The default install must work air-gapped except for outbound LLM calls (and even those must have a documented on-prem fallback path via vLLM).
 
 ### §10.2 ISA Constraints Lift
-- **Stack:** TypeScript end-to-end. Backend on Node 22 with Hono (preferred over Fastify for its smaller surface and middleware ergonomics around the audit-pipeline). Frontend Next.js 15 (App Router) + shadcn/ui + Tailwind. No Python services in the critical path.
+- **Stack:** TypeScript end-to-end. Backend and UI framework on Node 22 with Hono SSR strings (preferred over Fastify and a separate Next.js runtime for its smaller surface and middleware ergonomics around the audit-pipeline). No Python services in the critical path.
 - **Storage — retrieval:** Postgres 16 + `pgvector` ≥ 0.7 (HNSW index). No managed-vector-DB-only option (Pinecone/Weaviate/Qdrant Cloud) in v1. Self-host-first.
 - **Storage — audit ledger:** SQLite (WAL mode) per deployment, hash-chained, signed, exportable as a single sealed `.sqlite + .sig` artifact for regulator hand-off. Postgres for the audit ledger is permitted as an opt-in for high-volume deployments but SQLite is the default — single-file is half the audit story.
 - **Embedding model:** Default `bge-m3` (1024-dim, multilingual, strong on German). `jina-embeddings-v3` supported for German-heavy corpora. Provider interface pluggable; on-prem German models (Aleph Alpha Pharia, T-Systems OpenTelekomCloud Embedding) must be swap-in via config.
@@ -2619,6 +2619,8 @@ A self-hostable Next.js + Hono application at `audit-grade-rag.example.local` wh
 - 2026-05-11T09:39:58+02:00 — Completion report: Phase A rebuilt and froze `docs/MASTER_PRD.md` from `ISA.md`; Phase B implemented ISC-1..ISC-51 to the ISA bar; ReconcileCheck, `pnpm check:full`, `pnpm build`, GitHub CI, and GitHub branch protection are all green on the final contract state.
 - 2026-05-11T16:45:02+02:00 — Status transition: FROZEN -> MODIFIED for the PrdSpecificityGate gap-closure pass; captured failing gate evidence in `AUDITS/2026-05-11-prd-fix/gate-before.json`.
 - 2026-05-11T16:48:44+02:00 — Status transition: MODIFIED -> FROZEN after §7.5 provider coverage, ISA test-strategy cleanup, and L4 wiring made `PrdSpecificityGate.ts` exit 0 with evidence in `AUDITS/2026-05-11-prd-fix/gate-after.json`.
+- 2026-05-11T21:14:34+02:00 — Status transition: FROZEN -> MODIFIED for real-provider re-evaluation; reopened ISC-1, ISC-2, ISC-8, ISC-11, ISC-12, ISC-16, ISC-27, ISC-28, ISC-29, ISC-31, ISC-32, ISC-33, and ISC-48 because source audit found credential-ID WebAuthn, hash-vector bge-m3, EvidenceEcho/stub LLM, fixture eval, and non-strict live gate evidence instead of real-provider closure.
+- 2026-05-11T21:14:34+02:00 — UI provider decision: v1 uses the chosen Hono SSR-string UI stack allowed by the run prompt; ISA/PRD §7.5 and README now point to `tests/integration-live/hono-ssr.spec.ts` instead of the stale Next.js declaration.
 
 ## Appendix A. ISA Decisions Lift
 - **2026-05-10 — Initial scaffold.** Project seeded from the GoalMode skill use-case and the Audit-Grade RAG recommendation in the Bootoshi-blueprint scoping conversation. ISA seeded at E5 because the project will be driven end-to-end by Codex `/goal` mode per `~/.claude/skills/GoalMode/Workflows/MasterPRD.md`, and the GoalMode workflow expects a ≥1500-line Master PRD downstream of an ISA dense enough to make expansion mechanical rather than design-from-scratch.

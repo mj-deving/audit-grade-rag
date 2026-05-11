@@ -17,7 +17,7 @@ Off-the-shelf retrieval-augmented-generation products (LangChain Cloud, LlamaInd
 
 ## Vision
 
-A self-hostable Next.js + Hono application at `audit-grade-rag.example.local` where a compliance officer pastes a question, the operator console shows the answer with every claim citation-linked to the exact chunk in the exact source PDF page, the audit trail panel shows the SHA-256 hash chain entry that records the (query, retrieved chunks, generated answer, model version, prompt version, seed, timestamp, user) tuple, the "Replay" button reproduces the answer bit-for-bit from that ledger entry six months later, the "Generate AI Act §50 disclosure" button emits a regulator-shaped PDF the BaFin/BaSt/Aufsichtsbehörde can read without translation, and the eval-harness dashboard shows current groundedness / citation-accuracy / refusal-correctness scores against a versioned golden set with adversarial cases. Euphoric surprise: a Sparkasse compliance team that previously told their developers "RAG is forbidden until compliance signs off" runs this against a sample BaFin-Rundschreiben corpus on Monday, generates the §50 disclosure on Tuesday, and on Wednesday the Bereichsleiter-Compliance asks engineering to deploy it across the whole Beratungsabteilung — because the audit story is no longer hand-waving but an open-source-auditable system the Innenrevision can read.
+A self-hostable Hono SSR application at `audit-grade-rag.example.local` where a compliance officer pastes a question, the operator console shows the answer with every claim citation-linked to the exact chunk in the exact source PDF page, the audit trail panel shows the SHA-256 hash chain entry that records the (query, retrieved chunks, generated answer, model version, prompt version, seed, timestamp, user) tuple, the "Replay" button reproduces the answer bit-for-bit from that ledger entry six months later, the "Generate AI Act §50 disclosure" button emits a regulator-shaped PDF the BaFin/BaSt/Aufsichtsbehörde can read without translation, and the eval-harness dashboard shows current groundedness / citation-accuracy / refusal-correctness scores against a versioned golden set with adversarial cases. Euphoric surprise: a Sparkasse compliance team that previously told their developers "RAG is forbidden until compliance signs off" runs this against a sample BaFin-Rundschreiben corpus on Monday, generates the §50 disclosure on Tuesday, and on Wednesday the Bereichsleiter-Compliance asks engineering to deploy it across the whole Beratungsabteilung — because the audit story is no longer hand-waving but an open-source-auditable system the Innenrevision can read.
 
 ## Out of Scope
 
@@ -48,7 +48,7 @@ A self-hostable Next.js + Hono application at `audit-grade-rag.example.local` wh
 
 ## Constraints
 
-- **Stack:** TypeScript end-to-end. Backend on Node 22 with Hono (preferred over Fastify for its smaller surface and middleware ergonomics around the audit-pipeline). Frontend Next.js 15 (App Router) + shadcn/ui + Tailwind. No Python services in the critical path.
+- **Stack:** TypeScript end-to-end. Backend and UI framework on Node 22 with Hono SSR strings (preferred over Fastify and a separate Next.js runtime for its smaller surface and middleware ergonomics around the audit-pipeline). No Python services in the critical path.
 - **Storage — retrieval:** Postgres 16 + `pgvector` ≥ 0.7 (HNSW index). No managed-vector-DB-only option (Pinecone/Weaviate/Qdrant Cloud) in v1. Self-host-first.
 - **Storage — audit ledger:** SQLite (WAL mode) per deployment, hash-chained, signed, exportable as a single sealed `.sqlite + .sig` artifact for regulator hand-off. Postgres for the audit ledger is permitted as an opt-in for high-volume deployments but SQLite is the default — single-file is half the audit story.
 - **Embedding model:** Default `bge-m3` (1024-dim, multilingual, strong on German). `jina-embeddings-v3` supported for German-heavy corpora. Provider interface pluggable; on-prem German models (Aleph Alpha Pharia, T-Systems OpenTelekomCloud Embedding) must be swap-in via config.
@@ -72,8 +72,8 @@ Deliver a self-hostable, open-source-auditable RAG application that ingests one 
 
 ### Identity, session, and operator console
 
-- [x] ISC-1: Operator login at `/auth/operator` accepts an email, sends a 10-minute-expiry magic link, and creates a session bound to a WebAuthn passkey on first login.
-- [x] ISC-2: Subsequent logins require WebAuthn passkey only; magic-link flow is recovery-only and rate-limited (5 attempts / 15 min / email).
+- [ ] ISC-1: Operator login at `/auth/operator` accepts an email, sends a 10-minute-expiry magic link, and creates a session bound to a WebAuthn passkey on first login.
+- [ ] ISC-2: Subsequent logins require WebAuthn passkey only; magic-link flow is recovery-only and rate-limited (5 attempts / 15 min / email).
 - [x] ISC-3: Session cookie is `HttpOnly; Secure; SameSite=Strict`; idle timeout 30 min; absolute lifetime 8 h.
 - [x] ISC-4: Operator console German UI ships with all error messages, button labels, audit panels, and report-generation copy in `de-DE`; `Accept-Language` parsing exists but `de-DE` is the only fully translated locale in v1.
 - [x] ISC-5: Anti: `/auth/operator` does not accept passwords; password fields do not exist in the database schema.
@@ -82,21 +82,21 @@ Deliver a self-hostable, open-source-auditable RAG application that ingests one 
 ### Corpus ingestion and indexing
 
 - [x] ISC-7: `pnpm ingest --corpus <dir>` walks a watched directory, extracts text from PDF / DOCX / Markdown, OCRs scanned PDFs via tesseract, chunks at 800-token windows with 100-token overlap, and writes `(doc_id, page, char_offset, chunk_text)` rows to Postgres.
-- [x] ISC-8: Each chunk row is embedded via the configured embedding model and indexed in `pgvector` HNSW with `m=16, ef_construction=128`.
+- [ ] ISC-8: Each chunk row is embedded via the configured embedding model and indexed in `pgvector` HNSW with `m=16, ef_construction=128`.
 - [x] ISC-9: Re-ingestion of an unchanged document is a no-op (content hash check); a changed document creates a new `corpus_snapshot_id` and the previous chunks remain queryable for replay.
 - [x] ISC-10: A `corpus_snapshot_id` is recorded in the audit ledger for every query so old answers replay against the corpus state they were generated against.
-- [x] ISC-11: `pnpm ingest --dry-run` reports document count, chunk count, embedding-model name, and estimated index size without writing.
+- [ ] ISC-11: `pnpm ingest --dry-run` reports document count, chunk count, embedding-model name, and estimated index size without writing.
 
 ### Retrieval
 
-- [x] ISC-12: Hybrid retrieval: BM25 (top-50) + dense vector (top-50) merged via reciprocal-rank fusion to a final top-K (default K=8, configurable per query 1..20).
+- [ ] ISC-12: Hybrid retrieval: BM25 (top-50) + dense vector (top-50) merged via reciprocal-rank fusion to a final top-K (default K=8, configurable per query 1..20).
 - [x] ISC-13: Each retrieved chunk carries `(chunk_id, doc_id, page, char_offset, retrieval_score, retrieval_method)` in the response payload.
 - [x] ISC-14: Anti: Retrieval never returns chunks from a `corpus_snapshot_id` other than the one bound to the active query.
 - [x] ISC-15: A `relevance_score < 0.3` retrieval result for ALL top-K chunks triggers a structured `OutOfCorpus` answer instead of a generated response.
 
 ### Generation and per-claim citation
 
-- [x] ISC-16: LLM call uses `temperature=0`, fixed seed (default `42`, configurable), frozen `model_version`, frozen `prompt_version` (e.g. `prompts/answer/v3.tmpl`).
+- [ ] ISC-16: LLM call uses `temperature=0`, fixed seed (default `42`, configurable), frozen `model_version`, frozen `prompt_version` (e.g. `prompts/answer/v3.tmpl`).
 - [x] ISC-17: The generation prompt instructs the model to emit assertions tagged with `[chunk:<chunk_id>]` markers; the response parser extracts assertions and their citation lists.
 - [x] ISC-18: A post-generation validator rejects any assertion lacking at least one valid `chunk_id` reference; rejected outputs trigger one regeneration attempt with the validator feedback in the prompt; second failure surfaces a structured `UngroundedGenerationError` to the operator.
 - [x] ISC-19: Anti: An answer with at least one uncited claim is never returned to the operator. The validator block is itself recorded in the audit ledger.
@@ -113,16 +113,16 @@ Deliver a self-hostable, open-source-auditable RAG application that ingests one 
 
 ### Replay
 
-- [x] ISC-27: `audit-replay <ledger.sqlite> <entry-id>` re-issues the same query against the same `corpus_snapshot_id`, with the same model/prompt/embedding versions and seed, and asserts byte-equality with the original `generated_answer`.
-- [x] ISC-28: Replay against a drifted artifact (corpus snapshot purged, model version retired, prompt version edited) returns a structured `ReplayDriftError` naming the drifted artifact and exits non-zero. Never silently produces a different answer.
-- [x] ISC-29: A replay run is itself ledgered (with `outcome=replay-success` or `outcome=replay-drift`) so a regulator can see who replayed what when.
+- [ ] ISC-27: `audit-replay <ledger.sqlite> <entry-id>` re-issues the same query against the same `corpus_snapshot_id`, with the same model/prompt/embedding versions and seed, and asserts byte-equality with the original `generated_answer`.
+- [ ] ISC-28: Replay against a drifted artifact (corpus snapshot purged, model version retired, prompt version edited) returns a structured `ReplayDriftError` naming the drifted artifact and exits non-zero. Never silently produces a different answer.
+- [ ] ISC-29: A replay run is itself ledgered (with `outcome=replay-success` or `outcome=replay-drift`) so a regulator can see who replayed what when.
 
 ### Eval harness
 
 - [x] ISC-30: Golden set lives at `eval/golden/v<N>.jsonl` with `{question, expected_outcome, expected_chunks?, tags[]}`. Tags include `ambiguous`, `out-of-corpus`, `contradictory`, `multi-hop`, `numerical`.
-- [x] ISC-31: `pnpm eval` runs all golden questions against a pinned (model, prompt, corpus_snapshot) tuple and outputs `groundedness`, `citation-accuracy`, `refusal-correctness`, and per-tag breakdowns.
-- [x] ISC-32: Eval thresholds: groundedness ≥ 0.95, citation-accuracy ≥ 0.95, refusal-correctness ≥ 0.90. Fall below threshold → `pnpm eval` exits non-zero.
-- [x] ISC-33: The eval harness is part of `pnpm check:full` and therefore part of the GoalMode-style done-contract.
+- [ ] ISC-31: `pnpm eval` runs all golden questions against a pinned (model, prompt, corpus_snapshot) tuple and outputs `groundedness`, `citation-accuracy`, `refusal-correctness`, and per-tag breakdowns.
+- [ ] ISC-32: Eval thresholds: groundedness ≥ 0.95, citation-accuracy ≥ 0.95, refusal-correctness ≥ 0.90. Fall below threshold → `pnpm eval` exits non-zero.
+- [ ] ISC-33: The eval harness is part of `pnpm check:full` and therefore part of the GoalMode-style done-contract.
 - [x] ISC-34: Anti: `pnpm eval` does not pass on an empty golden set. Empty-set runs are explicit failures.
 
 ### Regulator report (EU AI Act §50)
@@ -149,7 +149,7 @@ Deliver a self-hostable, open-source-auditable RAG application that ingests one 
 
 ### Build, test, ship (GoalMode contract)
 
-- [x] ISC-48: `pnpm check:full` runs typecheck + Biome + ESLint + knip + Vitest (unit + integration) + e2e (`agent-browser`-driven) + eval harness, and exits 0.
+- [ ] ISC-48: `pnpm check:full` runs typecheck + Biome + ESLint + knip + Vitest (unit + integration) + e2e (`agent-browser`-driven) + eval harness, and exits 0.
 - [x] ISC-49: lefthook fast gate runs at every commit; pre-push runs integration; CI runs `pnpm check:full` on every push.
 - [x] ISC-50: README ships a 5-minute install: `git clone && pnpm install && docker-compose up postgres && pnpm ingest --corpus ./examples/eu-ai-act && pnpm dev` produces a working operator console.
 - [x] ISC-51: Anti: No commit lands on `main` with a failing CI run. Branch-protection rules enforce this on the GitHub side.
@@ -182,7 +182,7 @@ Deliver a self-hostable, open-source-auditable RAG application that ingests one 
 | `feat/replay-tool` | Bit-equal replay against ledger entries; ReplayDriftError on drift | ISC-27..29 | feat/audit-ledger, feat/generation-cited | no |
 | `feat/eval-harness` | Adversarial golden set + scorer + threshold gate; integrated into `check:full` | ISC-30..34 | feat/generation-cited | yes |
 | `feat/regulator-report` | EU AI Act §50 PDF + JSON + sealed-excerpt zip via Typst | ISC-35..38 | feat/audit-ledger, feat/eval-harness | no |
-| `feat/operator-console` | Next.js operator UI: query / chunks / answer / audit / replay / report | ISC-39..43 | feat/auth-passkey, feat/generation-cited, feat/regulator-report | no |
+| `feat/operator-console` | Hono SSR operator UI: query / chunks / answer / audit / replay / report | ISC-39..43 | feat/auth-passkey, feat/generation-cited, feat/regulator-report | no |
 | `feat/dsgvo-baseline` | Logger redaction, deletion tombstones, residency doc, egress allowlist | ISC-44..47 | — | yes |
 | `feat/devloop` | GoalMode-style guardrail stack: TS strict, Biome, ESLint, knip, lefthook, CI, pnpm check:full | ISC-48..51 | — | first (gates everything else) |
 

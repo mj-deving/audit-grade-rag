@@ -70,8 +70,8 @@ after-the-fact logging.
 - bge-m3 embedding model: wired for L4 through `tests/integration-live/bge-m3.spec.ts`; deferred unless `RUN_LIVE_TESTS=1` and `BGE_M3_EMBEDDING_ENDPOINT` points at a live endpoint.
 - pgvector vector store: wired for L4 through `tests/integration-live/pgvector.spec.ts`; deferred unless `RUN_LIVE_TESTS=1` and `DATABASE_URL` points at Postgres with pgvector available.
 - Typst PDF renderer: wired for L4 through `tests/integration-live/typst.spec.ts`; deferred unless `RUN_LIVE_TESTS=1` and the `typst` binary is on `PATH`.
-- WebAuthn auth library: wired for L4 through `tests/integration-live/webauthn.spec.ts`; deferred unless `RUN_LIVE_TESTS=1` enables the ES256 passkey-style challenge proof.
-- Next.js UI framework: deferred; `tests/integration-live/nextjs.spec.ts` fails loudly under `RUN_LIVE_TESTS=1` until the ISA's Next.js 15 runtime declaration is implemented or the ISA removes that declaration.
+- WebAuthn auth library: wired for L4 through `tests/integration-live/webauthn.spec.ts`; application passkey storage is reopened until the HTTP flow verifies real WebAuthn assertions instead of credential-ID presence.
+- Hono SSR UI framework: wired for L4 through `tests/integration-live/hono-ssr.spec.ts`; `RUN_LIVE_TESTS=1` instantiates the real Hono app and renders `/console` with CSP evidence.
 
 ## Five-Minute Install
 
