@@ -6,7 +6,7 @@ export type LiveProviderCategory =
   | "pgvector"
   | "typst"
   | "webauthn"
-  | "next.js";
+  | "hono-ssr";
 
 export function liveProviderEnabled(): boolean {
   return process.env[liveProviderFlag] === "1";
