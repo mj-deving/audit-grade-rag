@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -95,6 +95,13 @@ it("fails the pnpm eval command on an empty golden set", async () => {
 // No mocks: report generation consumes real ledger rows and writes a real report ledger event.
 it("generates deterministic Article 50 bundles with window filtering", async () => {
   const app = createReportWindowApp();
+  app.ledger.append({
+    entryType: "query.answered",
+    outcome: "answered",
+    generatedAnswer: "out-of-window",
+    userIdHash: "outside-window",
+    timestampMs: Date.parse("2026-05-09T23:59:59.999Z"),
+  });
   await app.ingest.ingest({ corpusDir: "examples/eu-ai-act" });
   const session = app.bootstrapOperator("operator@example.local");
   app.query(session.id, "jede beantwortete Anfrage");
@@ -105,14 +112,55 @@ it("generates deterministic Article 50 bundles with window filtering", async () 
   expect(first.report.systemIdentity).toBe("Audit-Grade RAG v1");
   expect(typeof first.report.deploymentContext).toBe("string");
   expect(first.report.queryVolume).toBe(1);
+  const queryOutcomes = first.report.outcomeBreakdown as { readonly answered?: number };
+  expect(queryOutcomes.answered).toBe(1);
   expect(first.report.refusalRate).toBe(0);
   expect(typeof first.report.sealedAuditExcerptHash).toBe("string");
   expect(first.jsonBytes).toBe(second.jsonBytes);
-  expect(first.pdfBytes).toBe(second.pdfBytes);
-  expect(first.auditExcerptZipBytes).toContain("PK");
+  expect(Buffer.compare(first.pdfBytes, second.pdfBytes)).toBe(0);
+  expect(first.pdfBytes.subarray(0, 5).toString("utf8")).toBe("%PDF-");
+  await expect(pdfText(first.pdfBytes)).resolves.toContain("Audit-Grade RAG v1");
+  expect(first.auditExcerptZipBytes.subarray(0, 2).toString("utf8")).toBe("PK");
+  expect(first.report.corpusSnapshotHashes.length).toBeGreaterThan(0);
+  expect(first.report.promptTemplateAppendix).toContain("Prompt versions in window");
   await expect(
     generateArticle50Report(app.ledger, { ...request, since: request.until }, defaultPassingEval()),
   ).rejects.toThrow(/since/u);
+});
+
+// No mocks: this exercises the package report command and its filesystem artifacts.
+it("writes Typst PDF, JSON, and sealed audit excerpt through the pnpm report command", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "agr-report-"));
+  try {
+    const result = await execFileAsync("pnpm", [
+      "--silent",
+      "report",
+      "--format=eu-ai-act-50",
+      "--since=2026-05-10T00:00:00.000Z",
+      "--until=2026-05-10T23:59:59.999Z",
+      "--out",
+      dir,
+    ]);
+    const payload = JSON.parse(result.stdout) as {
+      readonly files: {
+        readonly jsonPath: string;
+        readonly pdfPath: string;
+        readonly auditExcerptZipPath: string;
+      };
+    };
+    expect(payload.files.jsonPath.endsWith("disclosure.json")).toBe(true);
+    expect(payload.files.pdfPath.endsWith("disclosure.pdf")).toBe(true);
+    expect(payload.files.auditExcerptZipPath.endsWith("audit-excerpt.zip")).toBe(true);
+    expect((await readFile(payload.files.pdfPath)).subarray(0, 5).toString("utf8")).toBe("%PDF-");
+    expect(
+      (await readFile(payload.files.auditExcerptZipPath)).subarray(0, 2).toString("utf8"),
+    ).toBe("PK");
+    expect(JSON.parse(await readFile(payload.files.jsonPath, "utf8"))).toMatchObject({
+      systemIdentity: "Audit-Grade RAG v1",
+    });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 // No mocks: UI HTML is rendered from production view helpers.
@@ -191,4 +239,16 @@ function firstRetrieved(chunks: readonly RetrievedChunk[]): RetrievedChunk {
     throw new Error("expected retrieved chunk");
   }
   return chunk;
+}
+
+async function pdfText(pdfBytes: Buffer): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), "agr-pdf-text-"));
+  try {
+    const path = join(dir, "disclosure.pdf");
+    await writeFile(path, pdfBytes);
+    const result = await execFileAsync("pdftotext", [path, "-"]);
+    return result.stdout;
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 }

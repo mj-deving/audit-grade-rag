@@ -1,6 +1,6 @@
 import process from "node:process";
 import { createRuntimeApp } from "../app/runtime-app.js";
-import { defaultPassingEval } from "../modules/eval/eval.js";
+import { runGoldenEvaluation } from "../modules/eval/eval.js";
 import { generateArticle50Report } from "../modules/report/report.js";
 import { readFlag, requireFlag, writeJson } from "./args.js";
 
@@ -27,7 +27,7 @@ const bundle = await generateArticle50Report(
     until,
     ...(readFlag(args, "--out") === null ? {} : { outDir: requireFlag(args, "--out") }),
   },
-  defaultPassingEval(),
+  await runGoldenEvaluation(),
 );
 
 writeJson({

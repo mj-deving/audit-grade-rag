@@ -144,12 +144,19 @@ export class AuditLedger {
     return this.entries().map((row) => (row.sequence === sequence ? { ...row, ...patch } : row));
   }
 
-  async exportSealed(outDir: string, sinceMs: number, untilMs: number): Promise<LedgerExport> {
+  async exportSealed(
+    outDir: string,
+    sinceMs: number,
+    untilMs: number,
+    options: { readonly excludeEntryTypes?: readonly string[] } = {},
+  ): Promise<LedgerExport> {
     if (this.privateKey === null) {
       throw new Error("Ledger signing private key unavailable");
     }
+    const excluded = new Set(options.excludeEntryTypes ?? []);
     const rows = this.entries().filter(
-      (row) => row.timestampMs >= sinceMs && row.timestampMs <= untilMs,
+      (row) =>
+        row.timestampMs >= sinceMs && row.timestampMs <= untilMs && !excluded.has(row.entryType),
     );
     await mkdir(outDir, { recursive: true });
     const stamp = exportStamp(untilMs);

@@ -127,10 +127,10 @@ Deliver a self-hostable, open-source-auditable RAG application that ingests one 
 
 ### Regulator report (EU AI Act §50)
 
-- [ ] ISC-35: `pnpm report --format=eu-ai-act-50 --since=<ISO> --until=<ISO> --out=<dir>` produces `disclosure.pdf` (Typst-rendered), `disclosure.json` (machine-readable), and a sealed `audit-excerpt.zip` covering the time window.
-- [ ] ISC-36: The §50 PDF includes: system identity, deployment context, model versions used, embedding-model version, corpus-snapshot identity & SHA, query volume + outcome breakdown, eval scores at the report's time-window end, refusal-rate, the complete prompt-template versions in an appendix, and a verifiable hash of the sealed audit-excerpt.
-- [ ] ISC-37: Re-running the same `--since/--until` against the same ledger produces byte-identical PDF + JSON outputs (deterministic Typst rendering + frozen template version).
-- [ ] ISC-38: Anti: Report generation never reads outside the named time window. Out-of-window ledger rows are not included even when the operator drags the window.
+- [x] ISC-35: `pnpm report --format=eu-ai-act-50 --since=<ISO> --until=<ISO> --out=<dir>` produces `disclosure.pdf` (Typst-rendered), `disclosure.json` (machine-readable), and a sealed `audit-excerpt.zip` covering the time window.
+- [x] ISC-36: The §50 PDF includes: system identity, deployment context, model versions used, embedding-model version, corpus-snapshot identity & SHA, query volume + outcome breakdown, eval scores at the report's time-window end, refusal-rate, the complete prompt-template versions in an appendix, and a verifiable hash of the sealed audit-excerpt.
+- [x] ISC-37: Re-running the same `--since/--until` against the same ledger produces byte-identical PDF + JSON outputs (deterministic Typst rendering + frozen template version).
+- [x] ISC-38: Anti: Report generation never reads outside the named time window. Out-of-window ledger rows are not included even when the operator drags the window.
 
 ### Operator console UI
 
