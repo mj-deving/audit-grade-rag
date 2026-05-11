@@ -8,6 +8,8 @@ import { expect, it } from "vitest";
 import { createHttpApp } from "../app/http-app.js";
 import { createRuntimeApp } from "../app/runtime-app.js";
 import type { RetrievedChunk } from "../domain/types.js";
+import { logger } from "../lib/logger.js";
+import { hashOperatorId } from "./auth/auth.js";
 import {
   defaultPassingEval,
   evaluateGoldenSet,
@@ -28,6 +30,8 @@ import {
 } from "./ui/console.js";
 
 const execFileAsync = promisify(execFile);
+type EnvWithLogLevel = { LOG_LEVEL?: string };
+type TombstoneMetadata = { readonly operatorIdentityDeleted?: unknown };
 
 // No mocks: eval parsing and scoring run through the production JSONL parser.
 it("fails malformed golden sets and computes thresholded machine-readable scores", async () => {
@@ -256,12 +260,96 @@ it("redacts content, blocks egress, and keeps the full build gate wired", () => 
   }).toThrow(/secret/u);
   expect(isEgressAllowed("api.anthropic.com", ["api.anthropic.com"])).toBe(true);
   expect(isEgressAllowed("tracker.example", ["api.anthropic.com"])).toBe(false);
+  const residency = readFileSync("docs/data-residency.md", "utf8");
+  expect(residency).toContain("Supported V1 Regions");
+  expect(residency).toContain("default install runs on customer-controlled infrastructure");
+  expect(residency).toContain("The only permitted outbound egress in v1");
+  expect(residency).toContain("api.anthropic.com");
   expect(readFileSync("package.json", "utf8")).toContain(
     "pnpm check:fast && pnpm test:integration && pnpm test:e2e && pnpm eval",
   );
   expect(readFileSync(".github/workflows/ci.yml", "utf8")).toContain("pnpm check:full");
   expect(readFileSync("README.md", "utf8")).toContain("Five-Minute Install");
   expect(readFileSync("docker-compose.yml", "utf8")).toContain("3000:3000");
+});
+
+// No mocks: logger output is captured at the process boundary to enforce the INFO contract.
+it("logs only operational metadata at INFO and redacts content below INFO", () => {
+  const env = process.env as EnvWithLogLevel;
+  const originalLogLevel = env.LOG_LEVEL;
+  const originalWrite = process.stdout.write.bind(process.stdout);
+  const writes: string[] = [];
+  env.LOG_LEVEL = "trace";
+  process.stdout.write = (chunk: string | Uint8Array): boolean => {
+    writes.push(Buffer.isBuffer(chunk) ? chunk.toString("utf8") : String(chunk));
+    return true;
+  };
+  try {
+    logger.info("query.completed", {
+      userIdHash: "user_hash",
+      queryId: "query_1",
+      latencyMs: 12,
+      outcome: "answered",
+      queryText: "Welche Transparenzpflicht gilt?",
+      chunkText: "Betreiber muessen Nutzer informieren.",
+      internalDebug: "drop-me",
+    });
+    logger.debug("query.debug", {
+      query: "Welche Transparenzpflicht gilt?",
+      retrievedChunks: [{ chunkText: "Betreiber muessen Nutzer informieren." }],
+    });
+  } finally {
+    if (originalLogLevel === undefined) {
+      delete env.LOG_LEVEL;
+    } else {
+      env.LOG_LEVEL = originalLogLevel;
+    }
+    process.stdout.write = originalWrite;
+  }
+
+  const info = JSON.parse(writes[0] ?? "{}") as Record<string, unknown>;
+  const debug = JSON.parse(writes[1] ?? "{}") as {
+    readonly query?: unknown;
+    readonly retrievedChunks?: readonly { readonly chunkText?: unknown }[];
+  };
+  expect(info).toMatchObject({
+    level: "info",
+    user_id_hash: "user_hash",
+    query_id: "query_1",
+    latency_ms: 12,
+    outcome: "answered",
+  });
+  expect(info).not.toHaveProperty("queryText");
+  expect(info).not.toHaveProperty("chunkText");
+  expect(info).not.toHaveProperty("internalDebug");
+  expect(debug.query).toBe("[redacted]");
+  expect(debug.retrievedChunks?.[0]?.chunkText).toBe("[redacted]");
+  expect(writes.join("")).not.toContain("Welche Transparenzpflicht gilt?");
+  expect(writes.join("")).not.toContain("Betreiber muessen Nutzer informieren.");
+});
+
+// No mocks: deletion touches the real session store and exposes a tombstoned ledger-retention view.
+it("deletes operator sessions and tombstones ledger user IDs without mutating the chain", () => {
+  const app = createReportWindowApp();
+  const session = app.bootstrapOperator("operator@example.local");
+  const originalUserIdHash = hashOperatorId(session.operatorId);
+  expect(app.ledger.entries().some((entry) => entry.userIdHash === originalUserIdHash)).toBe(true);
+
+  const deleted = app.auth.tombstoneOperator(session.operatorId);
+
+  expect(deleted.status).toBe("deleted");
+  expect(deleted.emailHash).toBe(deleted.tombstoneHash);
+  expect(() => app.auth.requireSession(session.id)).toThrow(/session expired/u);
+  expect(app.ledger.verifyRows()).toMatchObject({ ok: true });
+  expect(app.ledger.entries().some((entry) => entry.userIdHash === originalUserIdHash)).toBe(true);
+  const retentionRows = app.auth.retentionLedgerEntries();
+  expect(retentionRows.some((entry) => entry.userIdHash === originalUserIdHash)).toBe(false);
+  expect(retentionRows.some((entry) => entry.userIdHash === deleted.tombstoneHash)).toBe(true);
+  expect(
+    retentionRows.some(
+      (entry) => (entry.metadata as TombstoneMetadata).operatorIdentityDeleted === true,
+    ),
+  ).toBe(true);
 });
 
 function caseLine(id: string): string {

@@ -1,15 +1,13 @@
 const forbiddenKeyPattern =
-  /(query|chunk|answer).*text|provider.*key|db.*credential|password|secret/iu;
+  /(^query$|query.*text|chunk.*text|answer.*text|prompt.*text|provider.*key|db.*credential|password|secret|pii)/iu;
 
 export function redactOperationalMeta(meta: Record<string, unknown>): Record<string, unknown> {
   const output: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(meta)) {
     if (forbiddenKeyPattern.test(key)) {
       output[key] = "[redacted]";
-    } else if (isRecord(value)) {
-      output[key] = redactOperationalMeta(value);
     } else {
-      output[key] = value;
+      output[key] = redactValue(value);
     }
   }
   return output;
@@ -27,4 +25,15 @@ export function isEgressAllowed(host: string, allowlist: readonly string[]): boo
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function redactValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    const items: readonly unknown[] = value;
+    return items.map((item): unknown => (isRecord(item) ? redactOperationalMeta(item) : item));
+  }
+  if (isRecord(value)) {
+    return redactOperationalMeta(value);
+  }
+  return value;
 }

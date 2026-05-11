@@ -142,10 +142,10 @@ Deliver a self-hostable, open-source-auditable RAG application that ingests one 
 
 ### DSGVO / compliance baseline
 
-- [ ] ISC-44: Logger never logs query text or retrieved-chunk text at INFO or below; only `(user_id_hash, query_id, latency_ms, outcome)` at INFO. Full content is in the audit ledger only.
-- [ ] ISC-45: Operator deletion removes their session + their `user_id` mapping but preserves ledger rows (with `user_id` replaced by a deletion-tombstone hash) for the regulator-required retention window.
-- [ ] ISC-46: A documented `data-residency.md` declares which deployment regions are supported; default install runs entirely on-prem with outbound LLM-API calls being the only egress.
-- [ ] ISC-47: Anti: No PII or query content is ever sent to a non-LLM-provider third-party in v1.
+- [x] ISC-44: Logger never logs query text or retrieved-chunk text at INFO or below; only `(user_id_hash, query_id, latency_ms, outcome)` at INFO. Full content is in the audit ledger only.
+- [x] ISC-45: Operator deletion removes their session + their `user_id` mapping but preserves ledger rows (with `user_id` replaced by a deletion-tombstone hash) for the regulator-required retention window.
+- [x] ISC-46: A documented `data-residency.md` declares which deployment regions are supported; default install runs entirely on-prem with outbound LLM-API calls being the only egress.
+- [x] ISC-47: Anti: No PII or query content is ever sent to a non-LLM-provider third-party in v1.
 
 ### Build, test, ship (GoalMode contract)
 
