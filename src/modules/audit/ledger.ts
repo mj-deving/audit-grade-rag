@@ -6,7 +6,7 @@ import {
   type KeyObject,
   sign,
 } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import Database from "better-sqlite3";
@@ -170,6 +170,7 @@ export class AuditLedger {
     const manifest = this.buildManifest(rows, ledgerBytes, sinceMs, untilMs);
     await writeFile(signaturePath, `${detachedSignature}\n`, "utf8");
     await writeFile(manifestPath, `${canonicalJson(manifest)}\n`, "utf8");
+    await setStableZipTimes([ledgerPath, signaturePath, manifestPath]);
     await zipFiles(zipPath, [ledgerPath, signaturePath, manifestPath]);
     return { ledgerPath, signaturePath, manifestPath, zipPath, manifest };
   }
@@ -393,6 +394,11 @@ async function writeSqliteLedger(
 async function zipFiles(zipPath: string, paths: readonly string[]): Promise<void> {
   await rm(zipPath, { force: true });
   await execFileAsync("zip", ["-X", "-j", zipPath, ...paths]);
+}
+
+async function setStableZipTimes(paths: readonly string[]): Promise<void> {
+  const stableTime = new Date("2020-01-01T00:00:00.000Z");
+  await Promise.all(paths.map((path) => utimes(path, stableTime, stableTime)));
 }
 
 function publicKeyPem(publicKey: KeyObject): string {
