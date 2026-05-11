@@ -5,7 +5,7 @@ export type Outcome =
   | "refused-out-of-corpus"
   | "blocked-uncited"
   | "provider-error"
-  | "replay-passed"
+  | "replay-success"
   | "replay-drift"
   | "replay-unsupported"
   | "report-generated"
@@ -134,8 +134,10 @@ export type LedgerEntry = {
   readonly entryType: string;
   readonly outcome: Outcome;
   readonly canonicalPayload: string;
+  readonly queryText: string | null;
   readonly querySha256: string;
   readonly retrievedChunks: readonly RetrievedChunk[];
+  readonly generatedAnswer: string | null;
   readonly generatedAnswerSha256: string | null;
   readonly claimCitations: readonly Citation[];
   readonly modelVersion: string;
