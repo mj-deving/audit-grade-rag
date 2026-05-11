@@ -1,8 +1,18 @@
+import { execFile } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { promisify } from "node:util";
 import { expect, it } from "vitest";
 import { createRuntimeApp } from "../app/runtime-app.js";
 import type { RetrievedChunk } from "../domain/types.js";
-import { defaultPassingEval, evaluateGoldenSet, parseGoldenSet } from "./eval/eval.js";
+import {
+  defaultPassingEval,
+  evaluateGoldenSet,
+  parseGoldenSet,
+  runGoldenEvaluation,
+} from "./eval/eval.js";
 import { generateArticle50Report } from "./report/report.js";
 import {
   assertNoPromptSecrets,
@@ -16,8 +26,10 @@ import {
   renderSourceViewer,
 } from "./ui/console.js";
 
+const execFileAsync = promisify(execFile);
+
 // No mocks: eval parsing and scoring run through the production JSONL parser.
-it("fails malformed golden sets and computes thresholded machine-readable scores", () => {
+it("fails malformed golden sets and computes thresholded machine-readable scores", async () => {
   expect(() => parseGoldenSet("")).toThrow(/empty/u);
   expect(() =>
     parseGoldenSet(JSON.stringify({ question: "Q", expected_outcome: "answered" })),
@@ -41,6 +53,43 @@ it("fails malformed golden sets and computes thresholded machine-readable scores
   });
   expect(Object.keys(run.perTagBreakdown)).toContain("out-of-corpus");
   expect(evaluateGoldenSet(parseGoldenSet(caseLine("missing")), new Map()).status).toBe("failed");
+
+  const fileBackedRun = await runGoldenEvaluation();
+  expect(fileBackedRun).toMatchObject({
+    status: "passed",
+    caseCount: 5,
+    groundedness: 1,
+    citationAccuracy: 1,
+    refusalCorrectness: 1,
+  });
+  expect(Object.keys(fileBackedRun.perTagBreakdown).sort()).toEqual([
+    "ambiguous",
+    "contradictory",
+    "multi-hop",
+    "numerical",
+    "out-of-corpus",
+  ]);
+});
+
+// No mocks: this proves the actual package eval command fails on an empty JSONL file.
+it("fails the pnpm eval command on an empty golden set", async () => {
+  const dir = await mkdtemp(join(tmpdir(), "agr-empty-eval-"));
+  try {
+    const emptyGolden = join(dir, "empty.jsonl");
+    await writeFile(emptyGolden, "");
+    await expect(
+      execFileAsync("pnpm", [
+        "--silent",
+        "eval",
+        "--golden",
+        emptyGolden,
+        "--corpus",
+        "corpus-fixtures",
+      ]),
+    ).rejects.toMatchObject({ code: 1 });
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
 });
 
 // No mocks: report generation consumes real ledger rows and writes a real report ledger event.

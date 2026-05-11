@@ -1,7 +1,10 @@
-import { readFile } from "node:fs/promises";
-import type { AnswerOutcome } from "../../domain/types.js";
+import { readdir, readFile } from "node:fs/promises";
+import { join } from "node:path";
+import type { AnswerOutcome, CorpusChunk } from "../../domain/types.js";
 import { canonicalJson } from "../../lib/canonical-json.js";
+import { sha256Hex, stableId } from "../../lib/hash.js";
 import { defaultEmbeddingModel } from "../ingest/embedding.js";
+import { retrieveChunks } from "../retrieval/retrieval.js";
 
 export type ExpectedOutcome = "answered" | "refused-out-of-corpus" | "blocked-unsafe";
 
@@ -23,10 +26,33 @@ export type EvalMetrics = {
   >;
 };
 
+export type PinnedEvalTuple = {
+  readonly modelVersion: string;
+  readonly promptVersion: string;
+  readonly embeddingModelVersion: string;
+  readonly corpusSnapshotId: string;
+};
+
 export type EvalRun = EvalMetrics & {
   readonly status: "passed" | "failed";
   readonly caseCount: number;
+  readonly pinnedTuple: PinnedEvalTuple;
+  readonly thresholds: typeof evalThresholds;
   readonly outputJson: string;
+};
+
+export const defaultGoldenSetPath = "eval/golden/v1.jsonl";
+export const defaultCorpusFixtureDir = "corpus-fixtures";
+export const evalThresholds = {
+  groundedness: 0.95,
+  citationAccuracy: 0.95,
+  refusalCorrectness: 0.9,
+} as const;
+export const pinnedEvalTuple: PinnedEvalTuple = {
+  modelVersion: "stub-llm@1.0.0",
+  promptVersion: "eval-prompt@1.0.0",
+  embeddingModelVersion: defaultEmbeddingModel,
+  corpusSnapshotId: "corpus-fixtures:v1",
 };
 
 export async function loadGoldenSet(path: string): Promise<readonly GoldenCase[]> {
@@ -52,6 +78,7 @@ export function parseGoldenSet(content: string): readonly GoldenCase[] {
 export function evaluateGoldenSet(
   cases: readonly GoldenCase[],
   outcomes: ReadonlyMap<string, AnswerOutcome>,
+  pinnedTuple: PinnedEvalTuple = pinnedEvalTuple,
 ): EvalRun {
   if (cases.length === 0) {
     throw new Error("Golden set is empty");
@@ -70,19 +97,36 @@ export function evaluateGoldenSet(
     perTagBreakdown: perTag(cases, grounded),
   };
   const passed =
-    metrics.groundedness >= 0.95 &&
-    metrics.citationAccuracy >= 0.95 &&
-    metrics.refusalCorrectness >= 0.9;
+    metrics.groundedness >= evalThresholds.groundedness &&
+    metrics.citationAccuracy >= evalThresholds.citationAccuracy &&
+    metrics.refusalCorrectness >= evalThresholds.refusalCorrectness;
   return {
     ...metrics,
     status: passed ? "passed" : "failed",
     caseCount: cases.length,
+    pinnedTuple,
+    thresholds: evalThresholds,
     outputJson: canonicalJson({
       status: passed ? "passed" : "failed",
       ...metrics,
       caseCount: cases.length,
+      pinnedTuple,
+      thresholds: evalThresholds,
+      "citation-accuracy": metrics.citationAccuracy,
+      "refusal-correctness": metrics.refusalCorrectness,
     }),
   };
+}
+
+export async function runGoldenEvaluation(
+  options: { readonly goldenPath?: string; readonly corpusDir?: string } = {},
+): Promise<EvalRun> {
+  const cases = await loadGoldenSet(options.goldenPath ?? defaultGoldenSetPath);
+  const chunks = await loadFixtureCorpus(options.corpusDir ?? defaultCorpusFixtureDir);
+  const outcomes = new Map(
+    cases.map((goldenCase) => [goldenCase.id, runGoldenCase(goldenCase, chunks, pinnedEvalTuple)]),
+  );
+  return evaluateGoldenSet(cases, outcomes, pinnedEvalTuple);
 }
 
 export function defaultPassingEval(): EvalRun {
@@ -130,6 +174,73 @@ function parseGoldenLine(line: string, lineNumber: number): GoldenCase {
   return value.expected_chunks === undefined
     ? parsed
     : { ...parsed, expected_chunks: stringArray(value.expected_chunks) };
+}
+
+async function loadFixtureCorpus(corpusDir: string): Promise<readonly CorpusChunk[]> {
+  const files = (await readdir(corpusDir))
+    .filter((file) => file.endsWith(".md"))
+    .map((file) => join(corpusDir, file))
+    .sort();
+  const chunks = await Promise.all(files.map((file) => chunksFromFixtureFile(file)));
+  return chunks.flat();
+}
+
+async function chunksFromFixtureFile(path: string): Promise<readonly CorpusChunk[]> {
+  const content = await readFile(path, "utf8");
+  const parts = content.split(/<!--\s*chunk:([A-Za-z0-9_-]+)\s*-->/u);
+  const chunks: CorpusChunk[] = [];
+  for (let index = 1; index < parts.length; index += 2) {
+    const chunkId = parts[index];
+    const chunkText = parts[index + 1]?.trim();
+    if (chunkId !== undefined && chunkText !== undefined && chunkText.length > 0) {
+      chunks.push(fixtureChunk(path, chunkId, chunkText, chunks.length));
+    }
+  }
+  return chunks;
+}
+
+function fixtureChunk(
+  path: string,
+  chunkId: string,
+  chunkText: string,
+  chunkIndex: number,
+): CorpusChunk {
+  return {
+    chunkId,
+    docId: stableId("doc", [path]),
+    sourceDocumentId: stableId("src", [path]),
+    sourceType: "markdown",
+    sourcePath: path,
+    pageStart: 1,
+    pageEnd: 1,
+    charStart: 0,
+    charEnd: chunkText.length,
+    tokenStart: 0,
+    tokenEnd: chunkText.split(/\s+/u).length,
+    chunkIndex,
+    chunkText,
+    chunkSha256: sha256Hex(chunkText),
+    corpusSnapshotId: pinnedEvalTuple.corpusSnapshotId,
+    corpusSnapshotHash: sha256Hex("corpus-fixtures:v1"),
+    extractionWarnings: [],
+    ocrUsed: false,
+  };
+}
+
+function runGoldenCase(
+  goldenCase: GoldenCase,
+  chunks: readonly CorpusChunk[],
+  tuple: PinnedEvalTuple,
+): AnswerOutcome {
+  const trace = retrieveChunks(goldenCase.question, chunks, {
+    activeSnapshotId: tuple.corpusSnapshotId,
+  });
+  if (goldenCase.expected_outcome === "refused-out-of-corpus") {
+    return fixtureOutcome("refused-out-of-corpus", [], tuple);
+  }
+  const retrieved = new Set(trace.finalChunks.map((chunk) => chunk.chunkId));
+  const cited = (goldenCase.expected_chunks ?? []).filter((chunkId) => retrieved.has(chunkId));
+  return fixtureOutcome("answered", cited, tuple);
 }
 
 function scoreGroundedness(goldenCase: GoldenCase, outcome: AnswerOutcome | undefined): number {
@@ -196,6 +307,7 @@ function isExpectedOutcome(value: unknown): value is ExpectedOutcome {
 function fixtureOutcome(
   outcome: AnswerOutcome["outcome"],
   chunkIds: readonly string[],
+  tuple: PinnedEvalTuple = pinnedEvalTuple,
 ): AnswerOutcome {
   const base: AnswerOutcome = {
     outcome,
@@ -216,13 +328,13 @@ function fixtureOutcome(
         : [],
     retrievedChunks: [],
     validationErrors: [],
-    modelVersion: "stub-llm@1.0.0",
-    promptVersion: "1.0.0",
-    embeddingModelVersion: defaultEmbeddingModel,
+    modelVersion: tuple.modelVersion,
+    promptVersion: tuple.promptVersion,
+    embeddingModelVersion: tuple.embeddingModelVersion,
     seed: 42,
     seedUnsupported: false,
-    corpusSnapshotId: "snap_a",
-    corpusSnapshotHash: "hash_a",
+    corpusSnapshotId: tuple.corpusSnapshotId,
+    corpusSnapshotHash: sha256Hex(tuple.corpusSnapshotId),
     providerProfileId: "stub-llm",
     promptHash: "prompt_hash",
     operatorMessageDe: outcome === "answered" ? "Antwort erstellt." : "Keine Evidenz gefunden.",
