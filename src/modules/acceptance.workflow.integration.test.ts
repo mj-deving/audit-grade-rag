@@ -2,7 +2,7 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
-import { createReferenceApp } from "../app/reference-app.js";
+import { createRuntimeApp } from "../app/runtime-app.js";
 import type { CorpusChunk } from "../domain/types.js";
 import { verifyExportedLedgerEntries } from "./audit/ledger.js";
 import { defaultPassingEval } from "./eval/eval.js";
@@ -38,7 +38,7 @@ async function runWorkflow() {
   const dir = await mkdtemp(join(tmpdir(), "agr-"));
   try {
     await writeCorpus(dir);
-    const app = createReferenceApp();
+    const app = createRuntimeApp();
     const dryRun = await app.ingest.ingest({ corpusDir: dir, dryRun: true });
     const ingested = await app.ingest.ingest({ corpusDir: dir });
     const unchanged = await app.ingest.ingest({ corpusDir: dir });
@@ -82,7 +82,7 @@ async function writeCorpus(dir: string): Promise<void> {
   await writeFile(join(dir, "hidden.md"), "hidden-text darf die Validierung nicht umgehen.");
 }
 
-function runQueries(app: ReturnType<typeof createReferenceApp>) {
+function runQueries(app: ReturnType<typeof createRuntimeApp>) {
   const session = app.bootstrapOperator("operator@example.local");
   const answered = app.query(session.id, "beantwortete Anfrage Audit-Zeile", 8);
   const refused = app.query(session.id, "zzzz yyyyy xxxx", 8);
@@ -94,7 +94,7 @@ function runQueries(app: ReturnType<typeof createReferenceApp>) {
   };
 }
 
-async function exportLedger(app: ReturnType<typeof createReferenceApp>, dir: string) {
+async function exportLedger(app: ReturnType<typeof createRuntimeApp>, dir: string) {
   const exportDir = join(dir, "export");
   const exported = await app.ledger.exportSealed(exportDir, 0, Date.now() + 1000);
   return {
@@ -103,7 +103,7 @@ async function exportLedger(app: ReturnType<typeof createReferenceApp>, dir: str
   };
 }
 
-async function reportLedger(app: ReturnType<typeof createReferenceApp>) {
+async function reportLedger(app: ReturnType<typeof createRuntimeApp>) {
   return generateArticle50Report(
     app.ledger,
     {

@@ -9,8 +9,7 @@ const result = JSON.parse(stdout);
 if (
   result.status !== "FROZEN" ||
   result.project !== "audit-grade-rag" ||
-  result.guardrailStatus !== "Bootstrapped" ||
-  result.goalStatus !== "Not launched" ||
+  result.iscCount !== 51 ||
   result.doneGateScript !== "pnpm check:full"
 ) {
   throw new Error(`Built CLI contract smoke test failed: ${stdout}`);

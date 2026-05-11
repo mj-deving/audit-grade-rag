@@ -11,9 +11,9 @@ const ledger = new AuditLedger();
 ledger.append({
   entryType: "query.answered",
   outcome: "answered",
-  queryText: "demo",
-  generatedAnswer: "Demoantwort",
-  userIdHash: "demo-user",
+  queryText: "audit export smoke query",
+  generatedAnswer: "Audit export smoke answer",
+  userIdHash: "operator-smoke-user",
   timestampMs: since + 1,
 });
 

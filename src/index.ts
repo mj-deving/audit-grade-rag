@@ -1,5 +1,5 @@
-export type { ReferenceApp } from "./app/reference-app.js";
-export { createReferenceApp } from "./app/reference-app.js";
+export type { RuntimeApp } from "./app/runtime-app.js";
+export { createRuntimeApp } from "./app/runtime-app.js";
 export type * from "./domain/types.js";
 export type { JsonPrimitive, JsonRecord, JsonValue } from "./lib/canonical-json.js";
 export { canonicalJson, toJsonValue } from "./lib/canonical-json.js";

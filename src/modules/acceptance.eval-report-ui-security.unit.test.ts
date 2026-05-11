@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
-import { createReferenceApp } from "../app/reference-app.js";
+import { createRuntimeApp } from "../app/runtime-app.js";
 import type { RetrievedChunk } from "../domain/types.js";
 import { defaultPassingEval, evaluateGoldenSet, parseGoldenSet } from "./eval/eval.js";
 import { generateArticle50Report } from "./report/report.js";
@@ -46,7 +46,7 @@ it("fails malformed golden sets and computes thresholded machine-readable scores
 // No mocks: report generation consumes real ledger rows and writes a real report ledger event.
 it("generates deterministic Article 50 bundles with window filtering", async () => {
   const app = createReportWindowApp();
-  await app.ingest.ingest({ corpusDir: "examples/demo-corpus" });
+  await app.ingest.ingest({ corpusDir: "examples/eu-ai-act" });
   const session = app.bootstrapOperator("operator@example.local");
   app.query(session.id, "jede beantwortete Anfrage");
   const request = reportWindow();
@@ -69,7 +69,7 @@ it("generates deterministic Article 50 bundles with window filtering", async () 
 // No mocks: UI HTML is rendered from production view helpers.
 it("renders German console, source, report, CSP, citations, and no analytics", async () => {
   const app = createReportWindowApp();
-  await app.ingest.ingest({ corpusDir: "examples/demo-corpus" });
+  await app.ingest.ingest({ corpusDir: "examples/eu-ai-act" });
   const session = app.bootstrapOperator("operator@example.local");
   const result = app.query(session.id, "jede beantwortete Anfrage");
   const report = await generateArticle50Report(app.ledger, reportWindow(), defaultPassingEval());
@@ -132,7 +132,7 @@ function reportWindow() {
 }
 
 function createReportWindowApp() {
-  return createReferenceApp({ clock: { now: () => Date.parse("2026-05-10T12:00:00.000Z") } });
+  return createRuntimeApp({ clock: { now: () => Date.parse("2026-05-10T12:00:00.000Z") } });
 }
 
 function firstRetrieved(chunks: readonly RetrievedChunk[]): RetrievedChunk {

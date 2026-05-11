@@ -1,9 +1,9 @@
-import { createReferenceApp } from "../app/reference-app.js";
+import { createRuntimeApp } from "../app/runtime-app.js";
 import { replayLedgerEntry } from "../modules/replay/replay.js";
 import { writeJson } from "./args.js";
 
-const app = createReferenceApp();
-await app.ingest.ingest({ corpusDir: "examples/demo-corpus" });
+const app = createRuntimeApp();
+await app.ingest.ingest({ corpusDir: "examples/eu-ai-act" });
 const session = app.bootstrapOperator("operator@example.local");
 const result = app.query(session.id, "Welche Auditpflicht gilt?");
 const replay = replayLedgerEntry(
@@ -15,7 +15,7 @@ const replay = replayLedgerEntry(
     modelVersion: result.modelVersion,
     replayCapability: "bit_equal",
     supportsSeed: true,
-    configHash: "demo",
+    configHash: result.providerProfileId,
   },
   {
     corpusSnapshotHash: result.corpusSnapshotHash,

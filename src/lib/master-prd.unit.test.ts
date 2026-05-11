@@ -1,20 +1,22 @@
 import { describe, expect, it } from "vitest";
 import { inspectMasterPrd } from "./master-prd.js";
 
-const validPrdExcerpt = `# Audit-Grade RAG Master PRD
-
+const validPrdExcerpt = `---
 Status: FROZEN
-Project: \`audit-grade-rag\`
-Guardrail status: Bootstrapped
-Goal status: Not launched
+Project: audit-grade-rag
+ISC count: 51
+---
 
-## Build Acceptance Criteria
+## §9. Acceptance Criteria
 
-1698. AC-BLD-008: \`pnpm check:full\` runs eval harness.
+- [ ] **ISC-48**: \`pnpm check:full\` runs typecheck + Biome + ESLint + knip + Vitest (unit + integration) + e2e + eval harness, and exits 0.
 
-## Definition of Done
+## §11. Definition of Done
 
-1758. DOD-002: \`pnpm check:full\` passes locally.
+- [ ] \`pnpm check:full\` exits 0.
+- [ ] \`pnpm build\` exits 0.
+
+## §13. Run Log and Progress Notes
 `;
 
 describe("inspectMasterPrd", () => {
@@ -23,19 +25,15 @@ describe("inspectMasterPrd", () => {
     expect(inspectMasterPrd(validPrdExcerpt)).toMatchObject({
       status: "FROZEN",
       project: "audit-grade-rag",
-      guardrailStatus: "Bootstrapped",
-      goalStatus: "Not launched",
+      iscCount: 51,
       doneGateScript: "pnpm check:full",
     });
   });
 
-  // No mocks: this validates the fail-closed path for accidental goal launch drift.
-  it("rejects a launched goal status", () => {
-    const driftedPrd = validPrdExcerpt.replace(
-      "Goal status: Not launched",
-      "Goal status: Launched",
-    );
+  // No mocks: this validates the fail-closed path for contract-anchor drift.
+  it("rejects an ISC count drift", () => {
+    const driftedPrd = validPrdExcerpt.replace("ISC count: 51", "ISC count: 50");
 
-    expect(() => inspectMasterPrd(driftedPrd)).toThrow(/Goal status/u);
+    expect(() => inspectMasterPrd(driftedPrd)).toThrow(/ISC count/u);
   });
 });

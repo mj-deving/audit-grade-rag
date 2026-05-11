@@ -14,7 +14,7 @@ import {
 import { IngestionStore } from "../modules/ingest/ingest.js";
 import { retrieveChunks } from "../modules/retrieval/retrieval.js";
 
-export type ReferenceApp = {
+export type RuntimeApp = {
   readonly ledger: AuditLedger;
   readonly auth: AuthService;
   readonly ingest: IngestionStore;
@@ -22,12 +22,12 @@ export type ReferenceApp = {
   bootstrapOperator(email: string): Session;
 };
 
-export type ReferenceAppOptions = {
+export type RuntimeAppOptions = {
   readonly provider?: LlmProvider;
   readonly clock?: Clock;
 };
 
-export function createReferenceApp(options: ReferenceAppOptions = {}): ReferenceApp {
+export function createRuntimeApp(options: RuntimeAppOptions = {}): RuntimeApp {
   const provider = options.provider ?? new EvidenceEchoProvider();
   const clock = options.clock ?? systemClock;
   const ledger = new AuditLedger(clock);

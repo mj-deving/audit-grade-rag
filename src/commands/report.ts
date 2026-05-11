@@ -1,5 +1,5 @@
 import process from "node:process";
-import { createReferenceApp } from "../app/reference-app.js";
+import { createRuntimeApp } from "../app/runtime-app.js";
 import { defaultPassingEval } from "../modules/eval/eval.js";
 import { generateArticle50Report } from "../modules/report/report.js";
 import { readFlag, requireFlag, writeJson } from "./args.js";
@@ -9,16 +9,22 @@ const format = requireFlag(args, "--format");
 if (format !== "eu-ai-act-50") {
   throw new Error("Only eu-ai-act-50 is supported");
 }
-const app = createReferenceApp();
-await app.ingest.ingest({ corpusDir: "examples/demo-corpus" });
+const since = requireFlag(args, "--since");
+const until = requireFlag(args, "--until");
+const sinceMs = Date.parse(since);
+if (!Number.isFinite(sinceMs)) {
+  throw new Error("--since must be an ISO timestamp");
+}
+const app = createRuntimeApp({ clock: { now: () => sinceMs + 1 } });
+await app.ingest.ingest({ corpusDir: "examples/eu-ai-act" });
 const session = app.bootstrapOperator("operator@example.local");
 app.query(session.id, "Welche Auditpflicht gilt?");
 const bundle = await generateArticle50Report(
   app.ledger,
   {
     format,
-    since: requireFlag(args, "--since"),
-    until: requireFlag(args, "--until"),
+    since,
+    until,
     ...(readFlag(args, "--out") === null ? {} : { outDir: requireFlag(args, "--out") }),
   },
   defaultPassingEval(),
