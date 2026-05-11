@@ -81,11 +81,11 @@ Deliver a self-hostable, open-source-auditable RAG application that ingests one 
 
 ### Corpus ingestion and indexing
 
-- [ ] ISC-7: `pnpm ingest --corpus <dir>` walks a watched directory, extracts text from PDF / DOCX / Markdown, OCRs scanned PDFs via tesseract, chunks at 800-token windows with 100-token overlap, and writes `(doc_id, page, char_offset, chunk_text)` rows to Postgres.
-- [ ] ISC-8: Each chunk row is embedded via the configured embedding model and indexed in `pgvector` HNSW with `m=16, ef_construction=128`.
-- [ ] ISC-9: Re-ingestion of an unchanged document is a no-op (content hash check); a changed document creates a new `corpus_snapshot_id` and the previous chunks remain queryable for replay.
-- [ ] ISC-10: A `corpus_snapshot_id` is recorded in the audit ledger for every query so old answers replay against the corpus state they were generated against.
-- [ ] ISC-11: `pnpm ingest --dry-run` reports document count, chunk count, embedding-model name, and estimated index size without writing.
+- [x] ISC-7: `pnpm ingest --corpus <dir>` walks a watched directory, extracts text from PDF / DOCX / Markdown, OCRs scanned PDFs via tesseract, chunks at 800-token windows with 100-token overlap, and writes `(doc_id, page, char_offset, chunk_text)` rows to Postgres.
+- [x] ISC-8: Each chunk row is embedded via the configured embedding model and indexed in `pgvector` HNSW with `m=16, ef_construction=128`.
+- [x] ISC-9: Re-ingestion of an unchanged document is a no-op (content hash check); a changed document creates a new `corpus_snapshot_id` and the previous chunks remain queryable for replay.
+- [x] ISC-10: A `corpus_snapshot_id` is recorded in the audit ledger for every query so old answers replay against the corpus state they were generated against.
+- [x] ISC-11: `pnpm ingest --dry-run` reports document count, chunk count, embedding-model name, and estimated index size without writing.
 
 ### Retrieval
 

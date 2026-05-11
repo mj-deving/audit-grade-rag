@@ -27,7 +27,15 @@ export {
   renderPrompt,
   validateClaims,
 } from "./modules/generation/generation.js";
+export {
+  defaultEmbeddingDimension,
+  defaultEmbeddingModel,
+  embedText,
+  estimateHnswIndexBytes,
+  pgVectorLiteral,
+} from "./modules/ingest/embedding.js";
 export { IngestionStore } from "./modules/ingest/ingest.js";
+export { PostgresIngestionStore } from "./modules/ingest/postgres-store.js";
 export type { ReplayArtifacts, ReplayResult } from "./modules/replay/replay.js";
 export { assertReplayPass, ReplayDriftError, replayLedgerEntry } from "./modules/replay/replay.js";
 export type { Article50Report, ReportBundle, ReportRequest } from "./modules/report/report.js";

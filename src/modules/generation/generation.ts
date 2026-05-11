@@ -9,6 +9,7 @@ import type {
   ValidationError,
 } from "../../domain/types.js";
 import { sha256Hex, stableId } from "../../lib/hash.js";
+import { defaultEmbeddingDimension, defaultEmbeddingModel } from "../ingest/embedding.js";
 import type { RetrievalTrace } from "../retrieval/retrieval.js";
 
 export type LlmRequest = {
@@ -46,10 +47,10 @@ export const defaultProviderProfile: ProviderProfile = {
 };
 
 export const defaultEmbeddingProfile: EmbeddingProfile = {
-  id: "stub-embedding",
-  modelVersion: "bge-m3@stub-v1",
-  dimension: 1024,
-  configHash: sha256Hex("bge-m3@stub-v1"),
+  id: "bge-m3",
+  modelVersion: defaultEmbeddingModel,
+  dimension: defaultEmbeddingDimension,
+  configHash: sha256Hex(defaultEmbeddingModel),
 };
 
 export class DeterministicStubProvider implements LlmProvider {

@@ -1,10 +1,16 @@
-import { readdir, readFile, stat } from "node:fs/promises";
-import { extname, join, resolve } from "node:path";
+import { execFile } from "node:child_process";
+import { mkdtemp, readdir, readFile, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { basename, extname, join, resolve } from "node:path";
+import { promisify } from "node:util";
 import type { CorpusChunk, CorpusSnapshot, SourceType } from "../../domain/types.js";
 import { sha256Hex, stableId } from "../../lib/hash.js";
 import type { Clock } from "../../lib/time.js";
 import { systemClock } from "../../lib/time.js";
 import type { AuditLedger } from "../audit/ledger.js";
+import { defaultEmbeddingModel, estimateHnswIndexBytes } from "./embedding.js";
+
+const execFileAsync = promisify(execFile);
 
 export type IngestOptions = {
   readonly corpusDir: string;
@@ -22,13 +28,14 @@ export type IngestResult = {
   readonly changedDocumentCount: number;
   readonly chunkCount: number;
   readonly embeddingModel: string;
+  readonly estimatedIndexSizeBytes: number;
   readonly warnings: readonly string[];
   readonly snapshot: CorpusSnapshot | null;
   readonly activated: boolean;
   readonly noOp: boolean;
 };
 
-type Revision = {
+export type Revision = {
   readonly path: string;
   readonly sourceType: SourceType;
   readonly contentSha256: string;
@@ -37,10 +44,15 @@ type Revision = {
   readonly warnings: readonly string[];
 };
 
+type ExtractedText = {
+  readonly text: string;
+  readonly ocrUsed: boolean;
+  readonly warnings: readonly string[];
+};
+
 const defaultChunkWindow = 800;
 const defaultChunkOverlap = 100;
 const chunkerVersion = "chunker-800-100-v1";
-const defaultEmbeddingModel = "bge-m3@stub-v1";
 
 export class IngestionStore {
   private readonly snapshots: CorpusSnapshot[] = [];
@@ -94,19 +106,7 @@ export class IngestionStore {
   }
 
   private async readRevisions(options: IngestOptions): Promise<readonly Revision[]> {
-    const corpusDir = assertInsideRoot(options.corpusDir, options.corpusRoot ?? options.corpusDir);
-    const entries = await sortedFiles(corpusDir);
-    const revisions: Revision[] = [];
-    for (const path of entries) {
-      const sourceType = sourceTypeFromPath(path);
-      if (sourceType === null) {
-        continue;
-      }
-      const bytes = await readFile(path);
-      const text = bytes.toString("utf8");
-      revisions.push(extractRevision(path, sourceType, text, bytes));
-    }
-    return revisions;
+    return readCorpusRevisions(options);
   }
 
   private createChunks(
@@ -165,6 +165,7 @@ export class IngestionStore {
       changedDocumentCount,
       chunkCount,
       embeddingModel: defaultEmbeddingModel,
+      estimatedIndexSizeBytes: estimateHnswIndexBytes(chunkCount),
       warnings,
       snapshot,
       activated,
@@ -258,6 +259,21 @@ export class IngestionStore {
   }
 }
 
+export async function readCorpusRevisions(options: IngestOptions): Promise<readonly Revision[]> {
+  const corpusDir = assertInsideRoot(options.corpusDir, options.corpusRoot ?? options.corpusDir);
+  const entries = await sortedFiles(corpusDir);
+  const revisions: Revision[] = [];
+  for (const path of entries) {
+    const sourceType = sourceTypeFromPath(path);
+    if (sourceType === null) {
+      continue;
+    }
+    const bytes = await readFile(path);
+    revisions.push(await extractRevision(path, sourceType, bytes));
+  }
+  return revisions;
+}
+
 function assertInsideRoot(corpusDir: string, corpusRoot: string): string {
   const resolvedRoot = resolve(corpusRoot);
   const resolvedDir = resolve(corpusDir);
@@ -295,15 +311,16 @@ function sourceTypeFromPath(path: string): SourceType | null {
   return null;
 }
 
-function extractRevision(
+async function extractRevision(
   path: string,
   sourceType: SourceType,
-  text: string,
   bytes: Buffer,
-): Revision {
-  const hiddenText = /hidden-text|white-on-white|opacity:0/iu.test(text);
-  const scannedPdf = sourceType === "pdf" && /scanned-pdf|ocr-required/iu.test(text);
+): Promise<Revision> {
+  const extracted = await extractText(path, sourceType, bytes);
+  const hiddenText = /hidden-text|white-on-white|opacity:0/iu.test(extracted.text);
+  const scannedPdf = sourceType === "pdf" && /scanned-pdf|ocr-required/iu.test(extracted.text);
   const warnings = [
+    ...extracted.warnings,
     ...(hiddenText ? ["hidden-text-warning"] : []),
     ...(scannedPdf ? ["ocr-used"] : []),
   ];
@@ -311,17 +328,88 @@ function extractRevision(
     path,
     sourceType,
     contentSha256: sha256Hex(bytes),
-    text: normalizeExtractedText(text),
-    ocrUsed: scannedPdf,
+    text: normalizeExtractedText(extracted.text),
+    ocrUsed: extracted.ocrUsed || scannedPdf,
     warnings,
   };
+}
+
+async function extractText(
+  path: string,
+  sourceType: SourceType,
+  bytes: Buffer,
+): Promise<ExtractedText> {
+  if (sourceType === "markdown") {
+    return { text: bytes.toString("utf8"), ocrUsed: false, warnings: [] };
+  }
+  if (sourceType === "docx") {
+    return extractDocxText(path, bytes);
+  }
+  return extractPdfText(path, bytes);
+}
+
+async function extractDocxText(path: string, bytes: Buffer): Promise<ExtractedText> {
+  try {
+    const xml = await runCommand("unzip", ["-p", path, "word/document.xml"]);
+    return { text: wordXmlToText(xml), ocrUsed: false, warnings: [] };
+  } catch {
+    return { text: bytes.toString("utf8"), ocrUsed: false, warnings: ["docx-text-fallback"] };
+  }
+}
+
+async function extractPdfText(path: string, bytes: Buffer): Promise<ExtractedText> {
+  try {
+    const text = await runCommand("pdftotext", ["-layout", path, "-"]);
+    if (normalizeExtractedText(text).length > 0 && !/scanned-pdf|ocr-required/iu.test(text)) {
+      return { text, ocrUsed: false, warnings: [] };
+    }
+  } catch {
+    return { text: bytes.toString("utf8"), ocrUsed: true, warnings: ["pdf-text-fallback"] };
+  }
+  return ocrPdfText(path, bytes);
+}
+
+async function ocrPdfText(path: string, bytes: Buffer): Promise<ExtractedText> {
+  const dir = await mkdtemp(join(tmpdir(), "agr-ocr-"));
+  try {
+    const prefix = join(dir, basename(path, extname(path)));
+    await runCommand("pdftoppm", ["-png", "-r", "200", path, prefix]);
+    const pages = (await readdir(dir)).filter((file) => file.endsWith(".png")).sort();
+    const pageTexts = await Promise.all(
+      pages.map((page) => runCommand("tesseract", [join(dir, page), "stdout", "-l", "deu+eng"])),
+    );
+    return { text: pageTexts.join("\n\n"), ocrUsed: true, warnings: ["ocr-used"] };
+  } catch {
+    return {
+      text: bytes.toString("utf8"),
+      ocrUsed: true,
+      warnings: ["ocr-used", "pdf-ocr-fallback"],
+    };
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+async function runCommand(command: string, args: readonly string[]): Promise<string> {
+  const result = await execFileAsync(command, [...args], { encoding: "utf8" });
+  return result.stdout;
+}
+
+function wordXmlToText(xml: string): string {
+  return xml
+    .replace(/<w:tab\s*\/>/gu, "\t")
+    .replace(/<\/w:p>/gu, "\n")
+    .replace(/<[^>]+>/gu, " ")
+    .replace(/&lt;/gu, "<")
+    .replace(/&gt;/gu, ">")
+    .replace(/&amp;/gu, "&");
 }
 
 function normalizeExtractedText(text: string): string {
   return text.replaceAll("\0", "").replace(/\r\n/gu, "\n").trim();
 }
 
-function chunkRevision(
+export function chunkRevision(
   revision: Revision,
   snapshotId: string,
   snapshotHash: string,
