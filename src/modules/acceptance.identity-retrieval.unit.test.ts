@@ -49,6 +49,16 @@ it("rejects anonymous HTTP query access", async () => {
   });
 });
 
+// No mocks: the auth route renders the production operator login HTML.
+it("does not expose password login fields on the operator auth route", async () => {
+  const response = await createHttpApp(createRuntimeApp()).request("/auth/operator");
+  const html = await response.text();
+
+  expect(response.status).toBe(200);
+  expect(html).toContain('type="email"');
+  expect(html).not.toMatch(/password/iu);
+});
+
 // No mocks: locale negotiation runs through the production Accept-Language parser.
 it("keeps de-DE as the only fully translated operator locale", () => {
   expect(parseOperatorLocale("de-AT,de;q=0.9,en;q=0.2")).toBe("de-DE");
