@@ -134,11 +134,11 @@ Deliver a self-hostable, open-source-auditable RAG application that ingests one 
 
 ### Operator console UI
 
-- [ ] ISC-39: `/console` renders a query box, a retrieved-chunks panel (collapsible, citation-anchored), an answer panel with inline citation pills, and an audit-trail panel showing the ledger row that was just written.
-- [ ] ISC-40: The "Replay" button on any historical ledger row triggers a replay and renders pass / drift / error inline with the diff if drift.
-- [ ] ISC-41: The "Generate AI Act §50 Report" view exposes time-window pickers and renders the resulting `.zip` for download.
-- [ ] ISC-42: WCAG 2.2 AA across the operator console (keyboard navigation, contrast ratios, screen-reader landmarks).
-- [ ] ISC-43: Anti: No analytics, telemetry, or third-party JS in the operator console. CSP is `default-src 'self'`.
+- [x] ISC-39: `/console` renders a query box, a retrieved-chunks panel (collapsible, citation-anchored), an answer panel with inline citation pills, and an audit-trail panel showing the ledger row that was just written.
+- [x] ISC-40: The "Replay" button on any historical ledger row triggers a replay and renders pass / drift / error inline with the diff if drift.
+- [x] ISC-41: The "Generate AI Act §50 Report" view exposes time-window pickers and renders the resulting `.zip` for download.
+- [x] ISC-42: WCAG 2.2 AA across the operator console (keyboard navigation, contrast ratios, screen-reader landmarks).
+- [x] ISC-43: Anti: No analytics, telemetry, or third-party JS in the operator console. CSP is `default-src 'self'`.
 
 ### DSGVO / compliance baseline
 

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { expect, it } from "vitest";
+import { createHttpApp } from "../app/http-app.js";
 import { createRuntimeApp } from "../app/runtime-app.js";
 import type { RetrievedChunk } from "../domain/types.js";
 import {
@@ -186,9 +187,61 @@ it("renders German console, source, report, CSP, citations, and no analytics", a
   expect(consoleView.csp).toContain("default-src 'self'");
   expect(consoleView.externalScriptCount).toBe(0);
   expect(consoleView.analyticsRequestCount).toBe(0);
+  expect(contrastRatio("#0f766e", "#ffffff")).toBeGreaterThanOrEqual(4.5);
+  expect(contrastRatio("#17201c", "#ffffff")).toBeGreaterThanOrEqual(4.5);
   expect(consoleView.keyboardControls).toEqual(
     expect.arrayContaining(["query", "citation", "replay"]),
   );
+});
+
+// No mocks: Hono serves the operator console, replay API, report API, and download route.
+it("serves console, replay, report, and download routes with self-only CSP", async () => {
+  const runtime = createReportWindowApp();
+  await runtime.ingest.ingest({ corpusDir: "examples/eu-ai-act" });
+  const session = runtime.bootstrapOperator("operator@example.local");
+  const result = runtime.query(session.id, "jede beantwortete Anfrage");
+  const app = createHttpApp(runtime);
+  const headers = { cookie: `agr_session=${session.id}` };
+
+  const consoleResponse = await app.request("/console", { headers });
+  const consoleHtml = await consoleResponse.text();
+  expect(consoleResponse.headers.get("content-security-policy")).toContain("default-src 'self'");
+  expect(consoleHtml).toContain("Korpusfrage");
+  expect(consoleHtml).toContain("<details");
+  expect(consoleHtml).toContain("/api/audit/");
+  expect(consoleHtml).toContain("/replay");
+  expect(consoleHtml).not.toMatch(/<script|analytics|telemetry/iu);
+
+  const replayResponse = await app.request(`/api/audit/${result.ledgerEntry.id}/replay`, {
+    method: "POST",
+    headers,
+  });
+  await expect(replayResponse.json()).resolves.toMatchObject({
+    data: { status: "passed", byteEqual: true },
+  });
+
+  const reportResponse = await app.request("/api/report", {
+    method: "POST",
+    headers: { ...headers, "content-type": "application/json" },
+    body: JSON.stringify(reportWindow()),
+  });
+  const reportPayload = (await reportResponse.json()) as {
+    readonly data: { readonly bundleSha256: string };
+  };
+  const reportHtml = await (await app.request("/console/reports", { headers })).text();
+  expect(reportHtml).toContain('type="datetime-local"');
+  expect(reportHtml).toContain("Bundle herunterladen");
+
+  const downloadResponse = await app.request(
+    `/api/reports/${reportPayload.data.bundleSha256}/download`,
+    { headers },
+  );
+  expect(downloadResponse.headers.get("content-type")).toContain("application/zip");
+  expect(
+    Buffer.from(await downloadResponse.arrayBuffer())
+      .subarray(0, 2)
+      .toString("utf8"),
+  ).toBe("PK");
 });
 
 // No mocks: these assertions inspect production redaction and build configuration files.
@@ -251,4 +304,27 @@ async function pdfText(pdfBytes: Buffer): Promise<string> {
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+}
+
+function contrastRatio(foreground: string, background: string): number {
+  const fg = relativeLuminance(hexRgb(foreground));
+  const bg = relativeLuminance(hexRgb(background));
+  const light = Math.max(fg, bg);
+  const dark = Math.min(fg, bg);
+  return (light + 0.05) / (dark + 0.05);
+}
+
+function hexRgb(hex: string): readonly [number, number, number] {
+  return [1, 3, 5].map((index) => Number.parseInt(hex.slice(index, index + 2), 16) / 255) as [
+    number,
+    number,
+    number,
+  ];
+}
+
+function relativeLuminance(rgb: readonly [number, number, number]): number {
+  const [red, green, blue] = rgb.map((channel) =>
+    channel <= 0.03928 ? channel / 12.92 : ((channel + 0.055) / 1.055) ** 2.4,
+  );
+  return 0.2126 * (red ?? 0) + 0.7152 * (green ?? 0) + 0.0722 * (blue ?? 0);
 }

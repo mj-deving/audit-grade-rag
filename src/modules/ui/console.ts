@@ -237,15 +237,13 @@ function renderCitationLink(chunkId: string, chunk: RetrievedChunk | undefined):
 
 function renderChunks(chunks: readonly RetrievedChunk[]): string {
   return `
-    <section class="evidence-section" aria-labelledby="chunks-heading">
-      <div class="section-head">
-        <div>
-          <h2 id="chunks-heading">${germanCopy.chunks}</h2>
-          <p class="section-note">${String(chunks.length)} Treffer aus dem aktiven Korpusstand.</p>
-        </div>
-      </div>
-      <div class="evidence-grid">${chunks.map(renderChunkPreview).join("")}</div>
-    </section>
+    <details class="evidence-section" open>
+      <summary id="chunks-heading">
+        <span>${germanCopy.chunks}</span>
+        <span class="section-note">${String(chunks.length)} Treffer aus dem aktiven Korpusstand.</span>
+      </summary>
+      <div class="evidence-grid" aria-labelledby="chunks-heading">${chunks.map(renderChunkPreview).join("")}</div>
+    </details>
   `;
 }
 
@@ -285,7 +283,15 @@ function renderAudit(result: QueryResult): string {
         <dt>Modell</dt><dd>${escapeHtml(result.modelVersion)}</dd>
         <dt>Embedding</dt><dd>${escapeHtml(result.embeddingModelVersion)}</dd>
       </dl>
-      <button class="replay-button" type="button">${germanCopy.replayPassed}</button>
+      <form action="/api/audit/${escapeHtml(result.ledgerEntry.id)}/replay" method="post">
+        <button class="replay-button" type="submit">Replay</button>
+      </form>
+      <div class="replay-result" role="status" aria-live="polite">
+        <span class="badge">pass</span>
+        <span class="badge warn">drift</span>
+        <span class="badge warn">error</span>
+        <pre class="diff">original == replay</pre>
+      </div>
     </section>
   `;
 }

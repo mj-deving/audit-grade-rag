@@ -330,6 +330,16 @@ h3 {
   margin-bottom: 14px;
 }
 
+summary {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 14px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
 .badge {
   display: inline-flex;
   align-items: center;
@@ -401,6 +411,25 @@ h3 {
   width: 100%;
   margin-top: 16px;
   background: #17372f;
+}
+
+.replay-result {
+  display: grid;
+  grid-template-columns: repeat(3, max-content);
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.diff {
+  grid-column: 1 / -1;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 10px;
+  overflow: auto;
+  background: #0f1713;
+  color: #effff7;
+  font-size: 0.82rem;
 }
 
 .evidence-grid {

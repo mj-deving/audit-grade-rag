@@ -1,7 +1,7 @@
 import { createServer } from "node:http";
 import process from "node:process";
 import { createRuntimeApp } from "../app/runtime-app.js";
-import { defaultPassingEval } from "../modules/eval/eval.js";
+import { runGoldenEvaluation } from "../modules/eval/eval.js";
 import { generateArticle50Report } from "../modules/report/report.js";
 import { renderAuthOperator, renderConsole, renderReportView } from "../modules/ui/console.js";
 
@@ -12,7 +12,7 @@ const query = app.query(session.id, "beantwortete Anfrage Audit-Zeile");
 const report = await generateArticle50Report(
   app.ledger,
   { format: "eu-ai-act-50", since: "2026-05-10T00:00:00.000Z", until: "2026-05-10T23:59:59.999Z" },
-  defaultPassingEval(),
+  await runGoldenEvaluation(),
 );
 
 const server = createServer((request, response) => {
