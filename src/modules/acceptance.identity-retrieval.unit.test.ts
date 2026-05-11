@@ -1,4 +1,6 @@
 import { expect, it } from "vitest";
+import { createHttpApp } from "../app/http-app.js";
+import { createRuntimeApp } from "../app/runtime-app.js";
 import type { CorpusChunk } from "../domain/types.js";
 import { AuditLedger } from "./audit/ledger.js";
 import { AuthService, UnauthorizedError } from "./auth/auth.js";
@@ -30,6 +32,20 @@ it("enforces bootstrap, passkey sessions, cookies, recovery, and rate limits", (
     limited.requestMagicLink("same@example.local");
   }
   expect(() => limited.requestMagicLink("same@example.local")).toThrow(/Rate limit/u);
+});
+
+// No mocks: Hono handles the real route and auth service rejects missing sessions.
+it("rejects anonymous HTTP query access", async () => {
+  const response = await createHttpApp(createRuntimeApp()).request("/api/query?q=audit");
+
+  expect(response.status).toBe(401);
+  await expect(response.json()).resolves.toMatchObject({
+    ok: false,
+    error: {
+      code: "UNAUTHORIZED",
+      message_de: "Anmeldung erforderlich.",
+    },
+  });
 });
 
 // No mocks: retrieval ranks real chunk records with deterministic dense, BM25, and RRF logic.

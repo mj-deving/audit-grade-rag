@@ -1,3 +1,4 @@
+export { createHttpApp } from "./app/http-app.js";
 export type { RuntimeApp } from "./app/runtime-app.js";
 export { createRuntimeApp } from "./app/runtime-app.js";
 export type * from "./domain/types.js";
