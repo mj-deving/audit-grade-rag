@@ -84,7 +84,7 @@ it("renders German console, source, report, CSP, citations, and no analytics", a
   expect(consoleView.html).toContain("citation-pill");
   expect(consoleView.html).toContain("Audit-Spur");
   expect(source.html).toContain("<mark>");
-  expect(reportView.html).toContain("Article-50");
+  expect(reportView.html).toContain("Artikel-50");
   expect(consoleView.csp).toContain("default-src 'self'");
   expect(consoleView.externalScriptCount).toBe(0);
   expect(consoleView.analyticsRequestCount).toBe(0);

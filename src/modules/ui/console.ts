@@ -34,8 +34,8 @@ export const germanCopy = {
   blocked: "Die generierte Antwort wurde wegen fehlender Zitate blockiert.",
   replayPassed: "Replay erfolgreich.",
   replayDrift: "Replay-Abweichung erkannt.",
-  replayUnsupported: "Replay fuer dieses Providerprofil nicht unterstuetzt.",
-  report: "Article-50-Bericht erzeugen",
+  replayUnsupported: "Replay fuer dieses Anbieterprofil nicht unterstuetzt.",
+  report: "Artikel-50-Bericht erzeugen",
 } as const;
 
 export function renderAuthOperator(): ConsoleView {
@@ -103,7 +103,7 @@ export function renderSourceViewer(chunk: RetrievedChunk): ConsoleView {
             <dt>Dokument</dt><dd>${escapeHtml(chunk.docId)}</dd>
             <dt>Seite</dt><dd>${String(chunk.pageStart)}</dd>
             <dt>Revision</dt><dd>${escapeHtml(chunk.chunkSha256)}</dd>
-            <dt>Snapshot</dt><dd>${escapeHtml(chunk.corpusSnapshotId)}</dd>
+            <dt>Korpusstand</dt><dd>${escapeHtml(chunk.corpusSnapshotId)}</dd>
           </dl>
           <mark>${escapeHtml(chunk.chunkText)}</mark>
           <a class="button-link" href="/console">Zurueck zur Antwort</a>
@@ -134,13 +134,13 @@ export function renderReportView(bundle: ReportBundle): ConsoleView {
             <button type="submit">${germanCopy.report}</button>
           </form>
           <dl class="report-list">
-            <dt>JSON Hash</dt><dd>${bundle.jsonSha256}</dd>
-            <dt>PDF Hash</dt><dd>${bundle.pdfSha256}</dd>
+            <dt>JSON-Hash</dt><dd>${bundle.jsonSha256}</dd>
+            <dt>PDF-Hash</dt><dd>${bundle.pdfSha256}</dd>
             <dt>Audit-Auszug</dt><dd>${bundle.auditExcerptZipSha256}</dd>
             <dt>Ledger</dt><dd>${bundle.ledgerEntryId}</dd>
           </dl>
           <a class="button-link" href="/api/reports/${bundle.bundleSha256}/download">Bundle herunterladen</a>
-          <p class="section-note">Dieser Bericht deckt Article 50 ab und ersetzt keine Rechtsberatung.</p>
+          <p class="section-note">Dieser Bericht deckt Artikel 50 ab und ersetzt keine Rechtsberatung.</p>
         </section>
       </main>
     `,
@@ -154,11 +154,11 @@ function renderRail(current: "console" | "reports"): string {
       <div class="brand">
         <div class="brand-mark">AR</div>
         <p class="brand-title">Audit-Grade RAG</p>
-        <p class="brand-subtitle">Operator Console</p>
+        <p class="brand-subtitle">Operator-Konsole</p>
       </div>
       <nav class="rail-nav">
         <a href="/console" ${current === "console" ? 'aria-current="page"' : ""}>Konsole</a>
-        <a href="/console/reports" ${current === "reports" ? 'aria-current="page"' : ""}>Article 50</a>
+        <a href="/console/reports" ${current === "reports" ? 'aria-current="page"' : ""}>Artikel 50</a>
         <a href="/auth/operator">Zugriff</a>
       </nav>
       <div class="rail-status">
@@ -174,13 +174,13 @@ function renderTopbar(result: QueryResult): string {
     <header class="topbar">
       <div>
         <p class="eyebrow">Belegte Korpusantworten</p>
-        <h1>Audit Workbench</h1>
+        <h1>Audit-Arbeitsplatz</h1>
         <p>Antworten, Evidenz und Audit-Status.</p>
       </div>
       <div class="status-strip" aria-label="Laufzeitstatus">
-        ${metric("Snapshot", shortHash(result.corpusSnapshotId))}
-        ${metric("Provider", result.providerProfileId)}
-        ${metric("Outcome", result.outcome)}
+        ${metric("Korpusstand", shortHash(result.corpusSnapshotId))}
+        ${metric("Anbieter", result.providerProfileId)}
+        ${metric("Ergebnis", result.outcome)}
       </div>
     </header>
   `;
@@ -192,7 +192,7 @@ function renderQueryPanel(result: QueryResult): string {
       <div class="section-head">
         <div>
           <h2 id="query-heading">Korpusfrage</h2>
-          <p class="section-note">Aktiver Snapshot: ${escapeHtml(result.corpusSnapshotId)}</p>
+          <p class="section-note">Aktiver Korpusstand: ${escapeHtml(result.corpusSnapshotId)}</p>
         </div>
         <span class="badge">Top-K 8</span>
       </div>
@@ -233,7 +233,7 @@ function renderChunks(chunks: readonly RetrievedChunk[]): string {
       <div class="section-head">
         <div>
           <h2 id="chunks-heading">${germanCopy.chunks}</h2>
-          <p class="section-note">${String(chunks.length)} Treffer aus dem aktiven Snapshot.</p>
+          <p class="section-note">${String(chunks.length)} Treffer aus dem aktiven Korpusstand.</p>
         </div>
       </div>
       <div class="evidence-grid">${chunks.map(renderChunkPreview).join("")}</div>
@@ -250,7 +250,7 @@ function renderChunkPreview(chunk: RetrievedChunk): string {
       </div>
       <p class="chunk-text">${escapeHtml(chunk.chunkText)}</p>
       <dl class="chunk-meta">
-        <dt>Score</dt><dd>${String(chunk.retrievalScore)}</dd>
+        <dt>Bewertung</dt><dd>${String(chunk.retrievalScore)}</dd>
         <dt>Dokument</dt><dd>${escapeHtml(chunk.docId)}</dd>
         <dt>Seite</dt><dd>${String(chunk.pageStart)}</dd>
         <dt>Offset</dt><dd>${String(chunk.charStart)}-${String(chunk.charEnd)}</dd>
@@ -272,7 +272,7 @@ function renderAudit(result: QueryResult): string {
         <dt>Zeilenhash</dt><dd>${shortHash(result.ledgerEntry.id)}</dd>
         <dt>Vorheriger Hash</dt><dd>${shortHash(result.ledgerEntry.previousHash)}</dd>
         <dt>Schluessel</dt><dd>${escapeHtml(result.ledgerEntry.signatureKeyId)}</dd>
-        <dt>Outcome</dt><dd>${escapeHtml(result.outcome)}</dd>
+        <dt>Ergebnis</dt><dd>${escapeHtml(result.outcome)}</dd>
         <dt>Prompt</dt><dd>${escapeHtml(result.promptVersion)}</dd>
         <dt>Modell</dt><dd>${escapeHtml(result.modelVersion)}</dd>
         <dt>Embedding</dt><dd>${escapeHtml(result.embeddingModelVersion)}</dd>
@@ -289,7 +289,7 @@ function stateMessage(outcome: QueryResult["outcome"]): string {
   if (outcome === "blocked-uncited") {
     return `<div class="answer-copy"><p>${germanCopy.blocked}</p></div>`;
   }
-  return '<div class="answer-copy"><p>Provider-Fehler. Bitte spaeter erneut versuchen.</p></div>';
+  return '<div class="answer-copy"><p>Anbieterfehler. Bitte spaeter erneut versuchen.</p></div>';
 }
 
 function statusBadge(outcome: QueryResult["outcome"]): string {

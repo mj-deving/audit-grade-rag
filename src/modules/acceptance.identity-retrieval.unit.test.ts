@@ -5,6 +5,7 @@ import type { CorpusChunk } from "../domain/types.js";
 import { AuditLedger } from "./audit/ledger.js";
 import { AuthService, UnauthorizedError } from "./auth/auth.js";
 import { retrieveChunks } from "./retrieval/retrieval.js";
+import { parseOperatorLocale } from "./ui/locale.js";
 
 // No mocks: auth state uses the real in-memory service and real audit ledger.
 it("enforces bootstrap, passkey sessions, cookies, recovery, and rate limits", () => {
@@ -46,6 +47,13 @@ it("rejects anonymous HTTP query access", async () => {
       message_de: "Anmeldung erforderlich.",
     },
   });
+});
+
+// No mocks: locale negotiation runs through the production Accept-Language parser.
+it("keeps de-DE as the only fully translated operator locale", () => {
+  expect(parseOperatorLocale("de-AT,de;q=0.9,en;q=0.2")).toBe("de-DE");
+  expect(parseOperatorLocale("en-US,en;q=0.9")).toBe("de-DE");
+  expect(parseOperatorLocale(null)).toBe("de-DE");
 });
 
 // No mocks: retrieval ranks real chunk records with deterministic dense, BM25, and RRF logic.
