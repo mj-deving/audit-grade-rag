@@ -72,6 +72,7 @@ cd audit-grade-rag
 corepack enable
 pnpm install --frozen-lockfile
 docker-compose up -d postgres
+export DATABASE_URL=postgres://audit_grade_rag:audit_grade_rag@127.0.0.1:5432/audit_grade_rag
 pnpm ingest --corpus ./examples/eu-ai-act
 pnpm dev
 ```
@@ -85,6 +86,12 @@ http://127.0.0.1:3000/console
 The dev server bootstraps an operator, uses `examples/eu-ai-act`, runs a
 deterministic query, and renders the console with answer, citation, evidence
 cards, and audit state.
+
+For environments that keep Postgres attached to the foreground, the same
+database step is `docker-compose up postgres` in a separate terminal. The
+subsequent `pnpm ingest` command uses the `DATABASE_URL` above so the five-minute
+path exercises the Postgres + pgvector ingestion path instead of the local
+in-memory fallback.
 
 ## Try the Core Workflows
 
