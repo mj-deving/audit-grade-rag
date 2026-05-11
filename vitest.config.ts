@@ -13,6 +13,13 @@ export default defineConfig({
           testTimeout: 30000,
         },
       },
+      {
+        test: {
+          name: "integration-live",
+          include: ["tests/integration-live/**/*.{spec,test}.ts"],
+          testTimeout: 60000,
+        },
+      },
     ],
   },
 });

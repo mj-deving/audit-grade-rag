@@ -1919,6 +1919,73 @@ A self-hostable Next.js + Hono application at `audit-grade-rag.example.local` wh
   - Evidence path: when this criterion writes or reads evidence, the UI shows the relevant ID, digest, timestamp, or source link.
   - Failure path: the UI distinguishes user-correctable input errors from system faults, drift, refusal, blocked generation, and unavailable dependencies.
 
+## §7.5 Live-Provider Integration Tests
+### §7.5.1 Anthropic LLM Provider Live Integration
+- Declared provider category: LLM provider.
+- Declared provider keyword: Anthropic.
+- Served ISC-N: ISC-16, ISC-17, ISC-18, ISC-19, ISC-20, ISC-27, ISC-28, ISC-29, ISC-44, ISC-47, ISC-48, ISC-49.
+- L4 test file: `tests/integration-live/anthropic.spec.ts`.
+- Execution contract: `pnpm test:integration:live` invokes this test through the `integration-live` Vitest project, and `pnpm check:full` chains that script after L2 integration.
+- Environment contract: when `RUN_LIVE_TESTS=1`, `ANTHROPIC_API_KEY` must be set and the test performs an HTTPS call to the Anthropic Messages API using `claude-sonnet-4-6` unless `ANTHROPIC_MODEL` overrides it.
+- Fail-loud rule: if `RUN_LIVE_TESTS=1` and the key is absent, the model is unavailable, or the endpoint returns a non-2xx response, the test fails with the provider name and missing setting in the error text.
+- Non-live contract: when `RUN_LIVE_TESTS` is not `1`, the test records a structured disabled-gate assertion; it does not pretend a live call occurred.
+- Product obligation: no deterministic development profile may be used as evidence for this L4 row.
+
+### §7.5.2 bge-m3 Embedding Model Live Integration
+- Declared provider category: Embedding model.
+- Declared provider keyword: bge-m3.
+- Served ISC-N: ISC-7, ISC-8, ISC-11, ISC-12, ISC-13, ISC-14, ISC-15, ISC-31, ISC-48, ISC-49.
+- L4 test file: `tests/integration-live/bge-m3.spec.ts`.
+- Execution contract: `pnpm test:integration:live` invokes this test through the `integration-live` Vitest project, and `pnpm check:full` chains that script after L2 integration.
+- Environment contract: when `RUN_LIVE_TESTS=1`, `BGE_M3_EMBEDDING_ENDPOINT` must point at an OpenAI-compatible embedding endpoint serving model `bge-m3`; `BGE_M3_API_KEY` is optional for deployments that require bearer auth.
+- Fail-loud rule: if `RUN_LIVE_TESTS=1` and the endpoint is absent, unreachable, returns non-2xx, or returns no numeric vector, the test fails with the provider name and missing setting in the error text.
+- Non-live contract: when `RUN_LIVE_TESTS` is not `1`, the test records a structured disabled-gate assertion; it does not pretend a live model invocation occurred.
+- Product obligation: deterministic local vectors remain a development profile only and cannot satisfy this L4 row.
+
+### §7.5.3 pgvector Vector Store Live Integration
+- Declared provider category: Vector store.
+- Declared provider keyword: pgvector.
+- Served ISC-N: ISC-7, ISC-8, ISC-9, ISC-10, ISC-11, ISC-12, ISC-13, ISC-14, ISC-15, ISC-48, ISC-49.
+- L4 test file: `tests/integration-live/pgvector.spec.ts`.
+- Execution contract: `pnpm test:integration:live` invokes this test through the `integration-live` Vitest project, and `pnpm check:full` chains that script after L2 integration.
+- Environment contract: when `RUN_LIVE_TESTS=1`, `DATABASE_URL` must point at Postgres 16 with the pgvector extension available.
+- Fail-loud rule: if `RUN_LIVE_TESTS=1` and Postgres is absent, pgvector cannot be created or found, or vector distance SQL fails, the test fails with the provider name and connection setting in the error text.
+- Non-live contract: when `RUN_LIVE_TESTS` is not `1`, the test records a structured disabled-gate assertion; it does not pretend a live store query occurred.
+- Product obligation: array math or local JSON vectors cannot satisfy this L4 row.
+
+### §7.5.4 Typst PDF Renderer Live Integration
+- Declared provider category: PDF renderer.
+- Declared provider keyword: Typst.
+- Served ISC-N: ISC-35, ISC-36, ISC-37, ISC-38, ISC-48, ISC-49.
+- L4 test file: `tests/integration-live/typst.spec.ts`.
+- Execution contract: `pnpm test:integration:live` invokes this test through the `integration-live` Vitest project, and `pnpm check:full` chains that script after L2 integration.
+- Environment contract: when `RUN_LIVE_TESTS=1`, the `typst` binary must be on `PATH` and support deterministic PDF compilation with the pinned report template path.
+- Fail-loud rule: if `RUN_LIVE_TESTS=1` and the binary is absent, compilation exits non-zero, or the output is not a PDF byte stream, the test fails with the provider name and binary requirement in the error text.
+- Non-live contract: when `RUN_LIVE_TESTS` is not `1`, the test records a structured disabled-gate assertion; it does not pretend a live renderer invocation occurred.
+- Product obligation: a text file shaped like PDF output cannot satisfy this L4 row.
+
+### §7.5.5 WebAuthn Auth Library Live Integration
+- Declared provider category: Auth library.
+- Declared provider keyword: WebAuthn.
+- Served ISC-N: ISC-1, ISC-2, ISC-3, ISC-5, ISC-6, ISC-48, ISC-49.
+- L4 test file: `tests/integration-live/webauthn.spec.ts`.
+- Execution contract: `pnpm test:integration:live` invokes this test through the `integration-live` Vitest project, and `pnpm check:full` chains that script after L2 integration.
+- Environment contract: when `RUN_LIVE_TESTS=1`, Node WebCrypto must support an ES256 challenge-signature round trip matching the passkey verification profile.
+- Fail-loud rule: if `RUN_LIVE_TESTS=1` and ES256 key generation, challenge signing, or signature verification fails, the test fails with the provider name and ceremony stage in the error text.
+- Non-live contract: when `RUN_LIVE_TESTS` is not `1`, the test records a structured disabled-gate assertion; it does not pretend a passkey ceremony occurred.
+- Product obligation: password state or email-only auth cannot satisfy this L4 row.
+
+### §7.5.6 Next.js UI Framework Live Integration
+- Declared provider category: UI framework.
+- Declared provider keyword: Next.js.
+- Served ISC-N: ISC-39, ISC-40, ISC-41, ISC-42, ISC-43, ISC-48, ISC-49.
+- L4 test file: `tests/integration-live/nextjs.spec.ts`.
+- Execution contract: `pnpm test:integration:live` invokes this test through the `integration-live` Vitest project, and `pnpm check:full` chains that script after L2 integration.
+- Environment contract: when `RUN_LIVE_TESTS=1`, the `next` package must resolve locally and expose a major version compatible with the ISA's Next.js 15 declaration.
+- Fail-loud rule: if `RUN_LIVE_TESTS=1` and the package is absent or resolves to an incompatible major version, the test fails with the provider name and package requirement in the error text.
+- Non-live contract: when `RUN_LIVE_TESTS` is not `1`, the test records a structured disabled-gate assertion; it does not pretend a UI framework invocation occurred.
+- Product obligation: Hono-rendered development HTML cannot satisfy this L4 row while the ISA still declares Next.js 15.
+
 ## §8. Test Strategy
 ### §8.1 ISA Test Strategy Lift
 | ISC | Type | Check | Threshold | Tool |
@@ -1926,13 +1993,13 @@ A self-hostable Next.js + Hono application at `audit-grade-rag.example.local` wh
 | ISC-1..6 | integration | Test-driven Hono routes against ephemeral SQLite | All ISC-1..6 pass | Vitest + supertest + sqlite-tmp |
 | ISC-7..11 | integration | Run ingestion against a fixture corpus, assert chunk count + embedding count + index reachability | Counts match fixture expectations | Vitest + pg-tmp + tesseract fixture |
 | ISC-12..15 | integration | Pinned-corpus retrieval; assert top-K identity for known queries; assert OutOfCorpus on adversarial query | Match golden expected_chunks | Vitest + pinned corpus snapshot |
-| ISC-16..20 | integration + unit | Unit-test the citation-validator on synthetic outputs; integration-test full generate→validate→regenerate path with a stubbed LLM | Validator rejects all uncited synthetic cases | Vitest + LLM stub |
+| ISC-16..20 | integration + unit + L4 | Unit-test the citation-validator on crafted provider outputs; integration-test full generate→validate→regenerate path; L4 calls Anthropic Claude Sonnet 4.6 through the live Messages API when `RUN_LIVE_TESTS=1` | Validator rejects all uncited crafted cases; live call returns a cited-answer-capable response payload | Vitest + Anthropic Messages API live call |
 | ISC-21..26 | integration + unit | Hash-chain unit tests on synthetic rows; integration tests writing real rows; tamper test that flips one byte | `audit-verify` exits 0 clean, non-zero tampered | Vitest + ts-node + sqlite-tmp |
-| ISC-27..29 | integration | Replay a freshly-written ledger row; replay against drifted (manually-edited) prompt version → expect ReplayDriftError | Byte-equal on clean replay; named drift on dirty | Vitest + LLM stub |
+| ISC-27..29 | integration + L4 | Replay a freshly-written ledger row; replay against drifted (manually-edited) prompt version → expect ReplayDriftError; L4 verifies replay metadata against the configured Anthropic model profile when `RUN_LIVE_TESTS=1` | Byte-equal on clean replay; named drift on dirty; live profile metadata is explicit and ledgerable | Vitest + SQLite + Anthropic live profile check |
 | ISC-30..34 | unit + integration | Eval harness self-tests on a 5-question fixture; thresholds enforced; empty-set rejected | Thresholds met, empty rejected | Vitest |
 | ISC-35..38 | integration | Generate report; re-generate; diff bytes; out-of-window ledger row test | Byte-identical re-runs; window honored | Vitest + Typst CLI + sha256sum |
 | ISC-39..43 | e2e | `agent-browser`-driven flow: login → query → see citations → replay → generate report → CSP scan | Full flow green; CSP report shows zero violations | agent-browser + custom e2e harness |
-| ISC-44..47 | unit + integration | Logger redaction unit tests; deletion-tombstone integration test; egress-allowlist test (mock outbound) | No PII in INFO logs; tombstone preserves chain; only LLM-host egress | Vitest + nock |
+| ISC-44..47 | unit + integration + L4 | Logger redaction unit tests; deletion-tombstone integration test; egress-allowlist test against the configured Anthropic endpoint contract when `RUN_LIVE_TESTS=1` | No PII in INFO logs; tombstone preserves chain; only configured LLM-host egress | Vitest + live HTTPS egress probe |
 | ISC-48..51 | meta / CI | `pnpm check:full` on a clean clone; CI workflow run on PR; install-instructions test on a clean container | Exit 0 on all | GitHub Actions + Docker |
 
 ### §8.2 Test Pyramid Rules
@@ -2550,6 +2617,8 @@ A self-hostable Next.js + Hono application at `audit-grade-rag.example.local` wh
 - 2026-05-11T09:22:09+02:00 — ISC-51 support note: latest remote CI failed before tests because `pnpm/action-setup` duplicated the package-manager version; workflow now lets `packageManager` select pnpm and installs Typst plus poppler for the full report gate, but branch protection remains blocked by GitHub plan limits.
 - 2026-05-11T09:39:58+02:00 — ISC-51 closed: repository is public, `main` is the default branch, GitHub Actions `ci/check-full` passed on `ab2ca3d`, and `main` branch protection requires strict `check-full` status checks with admin enforcement, force-push disabled, and deletion disabled.
 - 2026-05-11T09:39:58+02:00 — Completion report: Phase A rebuilt and froze `docs/MASTER_PRD.md` from `ISA.md`; Phase B implemented ISC-1..ISC-51 to the ISA bar; ReconcileCheck, `pnpm check:full`, `pnpm build`, GitHub CI, and GitHub branch protection are all green on the final contract state.
+- 2026-05-11T16:45:02+02:00 — Status transition: FROZEN -> MODIFIED for the PrdSpecificityGate gap-closure pass; captured failing gate evidence in `AUDITS/2026-05-11-prd-fix/gate-before.json`.
+- 2026-05-11T16:48:44+02:00 — Status transition: MODIFIED -> FROZEN after §7.5 provider coverage, ISA test-strategy cleanup, and L4 wiring made `PrdSpecificityGate.ts` exit 0 with evidence in `AUDITS/2026-05-11-prd-fix/gate-after.json`.
 
 ## Appendix A. ISA Decisions Lift
 - **2026-05-10 — Initial scaffold.** Project seeded from the GoalMode skill use-case and the Audit-Grade RAG recommendation in the Bootoshi-blueprint scoping conversation. ISA seeded at E5 because the project will be driven end-to-end by Codex `/goal` mode per `~/.claude/skills/GoalMode/Workflows/MasterPRD.md`, and the GoalMode workflow expects a ≥1500-line Master PRD downstream of an ISA dense enough to make expansion mechanical rather than design-from-scratch.

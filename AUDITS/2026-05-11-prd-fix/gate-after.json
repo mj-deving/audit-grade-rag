@@ -1,0 +1,94 @@
+{
+  "status": "pass",
+  "isaPath": "/home/mj/projects/audit-grade-rag/ISA.md",
+  "prdPath": "/home/mj/projects/audit-grade-rag/docs/MASTER_PRD.md",
+  "detectedProviders": [
+    "LLM provider",
+    "Embedding model",
+    "Vector store",
+    "PDF renderer",
+    "Auth library",
+    "UI framework"
+  ],
+  "section75": {
+    "totalEntries": 6,
+    "declaredCategories": [
+      "LLM provider",
+      "Embedding model",
+      "Vector store",
+      "PDF renderer",
+      "Auth library",
+      "UI framework"
+    ],
+    "coveredCategories": [
+      "LLM provider",
+      "Embedding model",
+      "Vector store",
+      "PDF renderer",
+      "Auth library",
+      "UI framework"
+    ],
+    "uncoveredCategories": [],
+    "orphanUnknownEntries": [],
+    "pureScopeDriftEntries": [],
+    "mixedScopeDriftEntries": [],
+    "perEntryCoverage": [
+      {
+        "heading": "### §7.5.1 Anthropic LLM Provider Live Integration",
+        "covers": ["LLM provider"],
+        "declaredCovers": ["LLM provider"],
+        "undeclaredCovers": [],
+        "cleanlySanctioned": true
+      },
+      {
+        "heading": "### §7.5.2 bge-m3 Embedding Model Live Integration",
+        "covers": ["LLM provider", "Embedding model"],
+        "declaredCovers": ["LLM provider", "Embedding model"],
+        "undeclaredCovers": [],
+        "cleanlySanctioned": true
+      },
+      {
+        "heading": "### §7.5.3 pgvector Vector Store Live Integration",
+        "covers": ["Vector store"],
+        "declaredCovers": ["Vector store"],
+        "undeclaredCovers": [],
+        "cleanlySanctioned": true
+      },
+      {
+        "heading": "### §7.5.4 Typst PDF Renderer Live Integration",
+        "covers": ["PDF renderer"],
+        "declaredCovers": ["PDF renderer"],
+        "undeclaredCovers": [],
+        "cleanlySanctioned": true
+      },
+      {
+        "heading": "### §7.5.5 WebAuthn Auth Library Live Integration",
+        "covers": ["Auth library"],
+        "declaredCovers": ["Auth library"],
+        "undeclaredCovers": [],
+        "cleanlySanctioned": true
+      },
+      {
+        "heading": "### §7.5.6 Next.js UI Framework Live Integration",
+        "covers": ["UI framework"],
+        "declaredCovers": ["UI framework"],
+        "undeclaredCovers": [],
+        "cleanlySanctioned": true
+      }
+    ]
+  },
+  "offendingTestStrategyRows": 0,
+  "wiring": {
+    "checked": true,
+    "projectDir": "/home/mj/projects/audit-grade-rag",
+    "integrationLiveDir": {
+      "exists": true,
+      "testFileCount": 6
+    },
+    "hasLiveScript": true,
+    "checkFullInvokesLive": true,
+    "hasIntegrationLiveProject": true,
+    "gaps": []
+  },
+  "violations": []
+}
