@@ -104,12 +104,12 @@ Deliver a self-hostable, open-source-auditable RAG application that ingests one 
 
 ### Audit ledger
 
-- [ ] ISC-21: Every query writes a ledger row with: `id` (SHA-256 of prev_hash + canonical_json(rest)), `prev_hash`, `query`, `retrieved_chunks` (JSON), `generated_answer`, `claim_citations` (JSON), `model_version`, `prompt_version`, `embedding_model_version`, `seed`, `corpus_snapshot_id`, `timestamp`, `user_id`, `signature`.
-- [ ] ISC-22: Validator-blocked outputs and `OutOfCorpus` returns are also ledgered (with an `outcome` field distinguishing `answered` / `refused-out-of-corpus` / `blocked-uncited`).
-- [ ] ISC-23: `audit-verify <ledger.sqlite>` walks the chain, recomputes hashes, and exits 0 only when every row's hash and signature verify against the previous row.
-- [ ] ISC-24: Tampering with any ledger row (hex-edit one byte) causes `audit-verify` to exit non-zero and name the first invalid row.
-- [ ] ISC-25: Ledger export produces a sealed artifact: `audit-<ISO-date>.sqlite` + `audit-<ISO-date>.sqlite.sig` (Ed25519, key configured per deployment) in a single `.zip`.
-- [ ] ISC-26: Anti: There is no SQL `UPDATE` or `DELETE` path on the ledger table in application code; only `INSERT`. A regression test enforces this via grep + parse.
+- [x] ISC-21: Every query writes a ledger row with: `id` (SHA-256 of prev_hash + canonical_json(rest)), `prev_hash`, `query`, `retrieved_chunks` (JSON), `generated_answer`, `claim_citations` (JSON), `model_version`, `prompt_version`, `embedding_model_version`, `seed`, `corpus_snapshot_id`, `timestamp`, `user_id`, `signature`.
+- [x] ISC-22: Validator-blocked outputs and `OutOfCorpus` returns are also ledgered (with an `outcome` field distinguishing `answered` / `refused-out-of-corpus` / `blocked-uncited`).
+- [x] ISC-23: `audit-verify <ledger.sqlite>` walks the chain, recomputes hashes, and exits 0 only when every row's hash and signature verify against the previous row.
+- [x] ISC-24: Tampering with any ledger row (hex-edit one byte) causes `audit-verify` to exit non-zero and name the first invalid row.
+- [x] ISC-25: Ledger export produces a sealed artifact: `audit-<ISO-date>.sqlite` + `audit-<ISO-date>.sqlite.sig` (Ed25519, key configured per deployment) in a single `.zip`.
+- [x] ISC-26: Anti: There is no SQL `UPDATE` or `DELETE` path on the ledger table in application code; only `INSERT`. A regression test enforces this via grep + parse.
 
 ### Replay
 
