@@ -45,7 +45,7 @@ it("fails malformed golden sets and computes thresholded machine-readable scores
 
 // No mocks: report generation consumes real ledger rows and writes a real report ledger event.
 it("generates deterministic Article 50 bundles with window filtering", async () => {
-  const app = createReferenceApp();
+  const app = createReportWindowApp();
   await app.ingest.ingest({ corpusDir: "examples/demo-corpus" });
   const session = app.bootstrapOperator("operator@example.local");
   app.query(session.id, "jede beantwortete Anfrage");
@@ -68,7 +68,7 @@ it("generates deterministic Article 50 bundles with window filtering", async () 
 
 // No mocks: UI HTML is rendered from production view helpers.
 it("renders German console, source, report, CSP, citations, and no analytics", async () => {
-  const app = createReferenceApp();
+  const app = createReportWindowApp();
   await app.ingest.ingest({ corpusDir: "examples/demo-corpus" });
   const session = app.bootstrapOperator("operator@example.local");
   const result = app.query(session.id, "jede beantwortete Anfrage");
@@ -129,6 +129,10 @@ function reportWindow() {
     since: "2026-05-10T00:00:00.000Z",
     until: "2026-05-10T23:59:59.999Z",
   };
+}
+
+function createReportWindowApp() {
+  return createReferenceApp({ clock: { now: () => Date.parse("2026-05-10T12:00:00.000Z") } });
 }
 
 function firstRetrieved(chunks: readonly RetrievedChunk[]): RetrievedChunk {

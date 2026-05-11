@@ -1,5 +1,7 @@
 import type { QueryResult } from "../domain/types.js";
 import { sha256Hex, stableId } from "../lib/hash.js";
+import type { Clock } from "../lib/time.js";
+import { systemClock } from "../lib/time.js";
 import { AuditLedger } from "../modules/audit/ledger.js";
 import { AuthService, hashOperatorId, type Session } from "../modules/auth/auth.js";
 import {
@@ -20,12 +22,17 @@ export type ReferenceApp = {
   bootstrapOperator(email: string): Session;
 };
 
-export function createReferenceApp(
-  provider: LlmProvider = new EvidenceEchoProvider(),
-): ReferenceApp {
-  const ledger = new AuditLedger();
-  const auth = new AuthService(ledger);
-  const ingest = new IngestionStore(ledger);
+export type ReferenceAppOptions = {
+  readonly provider?: LlmProvider;
+  readonly clock?: Clock;
+};
+
+export function createReferenceApp(options: ReferenceAppOptions = {}): ReferenceApp {
+  const provider = options.provider ?? new EvidenceEchoProvider();
+  const clock = options.clock ?? systemClock;
+  const ledger = new AuditLedger(clock);
+  const auth = new AuthService(ledger, clock);
+  const ingest = new IngestionStore(ledger, clock);
   return {
     ledger,
     auth,
