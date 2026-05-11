@@ -1,6 +1,9 @@
+import { execFile } from "node:child_process";
 import { generateKeyPairSync, type KeyObject, sign, verify } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { promisify } from "node:util";
+import Database from "better-sqlite3";
 import type {
   Citation,
   LedgerEntry,
@@ -44,29 +47,50 @@ export type LedgerVerification =
       readonly reason: string;
     };
 
+type LedgerRow = {
+  readonly sequence: number;
+  readonly id: string;
+  readonly previous_hash: string;
+  readonly entry_type: string;
+  readonly outcome: Outcome;
+  readonly canonical_payload: string;
+  readonly row_json: string;
+  readonly signature: string;
+  readonly signature_key_id: string;
+  readonly timestamp_ms: number;
+};
+
+type MetadataRow = {
+  readonly value: string;
+};
+
 const genesisHash = "0".repeat(64);
+const execFileAsync = promisify(execFile);
 
 export class AuditLedger {
   readonly signatureKeyId = "local-ed25519-v1";
-  private readonly rows: LedgerEntry[] = [];
+  private readonly db: Database.Database;
   private readonly publicKey: KeyObject;
   private readonly privateKey: KeyObject;
 
-  constructor(private readonly clock: Clock = systemClock) {
+  constructor(
+    private readonly clock: Clock = systemClock,
+    sqlitePath = ":memory:",
+  ) {
     const pair = generateKeyPairSync("ed25519");
     this.publicKey = pair.publicKey;
     this.privateKey = pair.privateKey;
+    this.db = new Database(sqlitePath);
+    this.configureDatabase();
   }
 
   append(input: LedgerAppendInput): LedgerEntry {
     const timestampMs = input.timestampMs ?? this.clock.now();
-    const previousHash = this.rows.at(-1)?.id ?? genesisHash;
+    const previousHash = this.lastEntry()?.id ?? genesisHash;
     const entryBase = this.buildEntryBase(input, previousHash, timestampMs);
     const canonicalPayload = canonicalJson(entryBase);
     const id = sha256Hex(`${previousHash}${canonicalPayload}`);
-    const signature = sign(null, Buffer.from(`${id}${canonicalPayload}`), this.privateKey).toString(
-      "base64",
-    );
+    const signature = signPayload(this.privateKey, id, canonicalPayload);
     const entry = {
       ...entryBase,
       id,
@@ -74,62 +98,107 @@ export class AuditLedger {
       signature,
       signatureKeyId: this.signatureKeyId,
     };
-    this.rows.push(entry);
+    this.insertEntry(entry);
     return entry;
   }
 
   entries(): readonly LedgerEntry[] {
-    return [...this.rows];
+    const rows = this.db
+      .prepare("SELECT row_json FROM audit_ledger ORDER BY sequence")
+      .all() as readonly Pick<LedgerRow, "row_json">[];
+    return rows.map((row) => parseLedgerEntry(row.row_json));
   }
 
   findById(id: string): LedgerEntry {
-    const row = this.rows.find((entry) => entry.id === id);
+    const row = this.db.prepare("SELECT row_json FROM audit_ledger WHERE id = ?").get(id) as
+      | Pick<LedgerRow, "row_json">
+      | undefined;
     if (row === undefined) {
       throw new Error(`Ledger entry not found: ${id}`);
     }
-    return row;
+    return parseLedgerEntry(row.row_json);
   }
 
-  verifyRows(rows: readonly LedgerEntry[] = this.rows): LedgerVerification {
-    let previousHash = genesisHash;
-    for (const row of rows) {
-      const result = this.verifyRow(row, previousHash);
-      if (!result.ok) {
-        return {
-          ok: false,
-          checkedRows: row.sequence - 1,
-          firstInvalidSequence: row.sequence,
-          reason: result.reason,
-        };
-      }
-      previousHash = row.id;
-    }
-    return { ok: true, checkedRows: rows.length };
+  verifyRows(rows: readonly LedgerEntry[] = this.entries()): LedgerVerification {
+    return verifyRowsWithPublicKey(rows, this.publicKey);
   }
 
   tamperedCopy(sequence: number, patch: Partial<LedgerEntry>): readonly LedgerEntry[] {
-    return this.rows.map((row) => (row.sequence === sequence ? { ...row, ...patch } : row));
+    return this.entries().map((row) => (row.sequence === sequence ? { ...row, ...patch } : row));
   }
 
   async exportSealed(outDir: string, sinceMs: number, untilMs: number): Promise<LedgerExport> {
-    const rows = this.rows.filter(
+    const rows = this.entries().filter(
       (row) => row.timestampMs >= sinceMs && row.timestampMs <= untilMs,
     );
     await mkdir(outDir, { recursive: true });
-    const ledgerPath = join(outDir, "audit-ledger.sqlite");
-    const signaturePath = join(outDir, "audit-ledger.signatures.json");
+    const stamp = exportStamp(untilMs);
+    const ledgerPath = join(outDir, `audit-${stamp}.sqlite`);
+    const signaturePath = join(outDir, `audit-${stamp}.sqlite.sig`);
     const manifestPath = join(outDir, "manifest.json");
-    const ledgerBytes = rows.map((row) => canonicalJson(row)).join("\n");
-    const signatures = rows.map((row) => ({
-      id: row.id,
-      sequence: row.sequence,
-      signature: row.signature,
-    }));
+    const zipPath = join(outDir, `audit-${stamp}.zip`);
+    await writeSqliteLedger(ledgerPath, rows, publicKeyPem(this.publicKey), this.signatureKeyId);
+    const ledgerBytes = await readFile(ledgerPath);
+    const detachedSignature = sign(null, ledgerBytes, this.privateKey).toString("base64");
     const manifest = this.buildManifest(rows, ledgerBytes, sinceMs, untilMs);
-    await writeFile(ledgerPath, `${ledgerBytes}\n`, "utf8");
-    await writeFile(signaturePath, `${canonicalJson(signatures)}\n`, "utf8");
+    await writeFile(signaturePath, `${detachedSignature}\n`, "utf8");
     await writeFile(manifestPath, `${canonicalJson(manifest)}\n`, "utf8");
-    return { ledgerPath, signaturePath, manifestPath, manifest };
+    await zipFiles(zipPath, [ledgerPath, signaturePath, manifestPath]);
+    return { ledgerPath, signaturePath, manifestPath, zipPath, manifest };
+  }
+
+  private configureDatabase(): void {
+    this.db.pragma("journal_mode = WAL");
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS audit_metadata (
+        key text PRIMARY KEY,
+        value text NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS audit_ledger (
+        sequence integer PRIMARY KEY,
+        id text NOT NULL UNIQUE,
+        previous_hash text NOT NULL,
+        entry_type text NOT NULL,
+        outcome text NOT NULL,
+        canonical_payload text NOT NULL,
+        row_json text NOT NULL,
+        signature text NOT NULL,
+        signature_key_id text NOT NULL,
+        timestamp_ms integer NOT NULL
+      );
+    `);
+    this.db
+      .prepare("INSERT OR IGNORE INTO audit_metadata (key, value) VALUES (?, ?)")
+      .run("public_key_pem", publicKeyPem(this.publicKey));
+  }
+
+  private lastEntry(): LedgerEntry | null {
+    const row = this.db
+      .prepare("SELECT row_json FROM audit_ledger ORDER BY sequence DESC LIMIT 1")
+      .get() as Pick<LedgerRow, "row_json"> | undefined;
+    return row === undefined ? null : parseLedgerEntry(row.row_json);
+  }
+
+  private insertEntry(entry: LedgerEntry): void {
+    this.db
+      .prepare(
+        `INSERT INTO audit_ledger
+           (sequence, id, previous_hash, entry_type, outcome, canonical_payload,
+            row_json, signature, signature_key_id, timestamp_ms)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        entry.sequence,
+        entry.id,
+        entry.previousHash,
+        entry.entryType,
+        entry.outcome,
+        entry.canonicalPayload,
+        canonicalJson(entry),
+        entry.signature,
+        entry.signatureKeyId,
+        entry.timestampMs,
+      );
   }
 
   private buildEntryBase(
@@ -141,7 +210,7 @@ export class AuditLedger {
       input.generatedAnswer === undefined ? null : sha256Hex(input.generatedAnswer);
     return {
       previousHash,
-      sequence: this.rows.length + 1,
+      sequence: this.entries().length + 1,
       entryType: input.entryType,
       outcome: input.outcome,
       querySha256: sha256Hex(input.queryText ?? ""),
@@ -164,32 +233,9 @@ export class AuditLedger {
     };
   }
 
-  private verifyRow(
-    row: LedgerEntry,
-    previousHash: string,
-  ): { readonly ok: true } | { readonly ok: false; readonly reason: string } {
-    if (row.previousHash !== previousHash) {
-      return { ok: false, reason: "previous hash mismatch" };
-    }
-    const canonicalPayload = canonicalJson(payloadForVerification(row));
-    if (canonicalPayload !== row.canonicalPayload) {
-      return { ok: false, reason: "canonical payload mismatch" };
-    }
-    if (sha256Hex(`${previousHash}${canonicalPayload}`) !== row.id) {
-      return { ok: false, reason: "row hash mismatch" };
-    }
-    const validSignature = verify(
-      null,
-      Buffer.from(`${row.id}${row.canonicalPayload}`),
-      this.publicKey,
-      Buffer.from(row.signature, "base64"),
-    );
-    return validSignature ? { ok: true } : { ok: false, reason: "signature mismatch" };
-  }
-
   private buildManifest(
     rows: readonly LedgerEntry[],
-    ledgerBytes: string,
+    ledgerBytes: Buffer,
     sinceMs: number,
     untilMs: number,
   ): LedgerManifest {
@@ -225,31 +271,93 @@ export type LedgerExport = {
   readonly ledgerPath: string;
   readonly signaturePath: string;
   readonly manifestPath: string;
+  readonly zipPath: string;
   readonly manifest: LedgerManifest;
 };
 
 export function verifyExportedLedgerEntries(rows: readonly unknown[]): LedgerVerification {
+  return verifyRowsWithPublicKey(rows.map(assertLedgerEntry));
+}
+
+export function readSqliteLedgerEntries(ledgerPath: string): readonly LedgerEntry[] {
+  const db = new Database(ledgerPath, { readonly: true, fileMustExist: true });
+  try {
+    const rows = db
+      .prepare("SELECT row_json FROM audit_ledger ORDER BY sequence")
+      .all() as readonly Pick<LedgerRow, "row_json">[];
+    return rows.map((row) => parseLedgerEntry(row.row_json));
+  } finally {
+    db.close();
+  }
+}
+
+export function verifySqliteLedger(ledgerPath: string): LedgerVerification {
+  try {
+    const db = new Database(ledgerPath, { readonly: true, fileMustExist: true });
+    try {
+      const rows = db
+        .prepare("SELECT row_json FROM audit_ledger ORDER BY sequence")
+        .all() as readonly Pick<LedgerRow, "row_json">[];
+      const publicKeyRow = db
+        .prepare("SELECT value FROM audit_metadata WHERE key = 'public_key_pem'")
+        .get() as MetadataRow | undefined;
+      const entries = rows.map((row) => parseLedgerEntry(row.row_json));
+      return verifyRowsWithPublicKey(entries, publicKeyRow?.value);
+    } finally {
+      db.close();
+    }
+  } catch (error) {
+    return {
+      ok: false,
+      checkedRows: 0,
+      firstInvalidSequence: 1,
+      reason: error instanceof Error ? error.message : "sqlite verification failed",
+    };
+  }
+}
+
+function verifyRowsWithPublicKey(
+  rows: readonly LedgerEntry[],
+  publicKey?: KeyObject | string,
+): LedgerVerification {
   let previousHash = genesisHash;
   let checkedRows = 0;
   for (const row of rows) {
-    const entry = assertLedgerEntry(row);
-    const canonicalPayload = canonicalJson(payloadForVerification(entry));
-    if (entry.previousHash !== previousHash) {
-      return invalidExport(checkedRows, entry.sequence, "previous hash mismatch");
+    const result = verifyRow(row, previousHash, publicKey);
+    if (!result.ok) {
+      return invalidExport(checkedRows, row.sequence, result.reason);
     }
-    if (entry.canonicalPayload !== canonicalPayload) {
-      return invalidExport(checkedRows, entry.sequence, "canonical payload mismatch");
-    }
-    if (sha256Hex(`${previousHash}${canonicalPayload}`) !== entry.id) {
-      return invalidExport(checkedRows, entry.sequence, "row hash mismatch");
-    }
-    if (entry.signature.length === 0) {
-      return invalidExport(checkedRows, entry.sequence, "signature missing");
-    }
-    previousHash = entry.id;
+    previousHash = row.id;
     checkedRows += 1;
   }
   return { ok: true, checkedRows };
+}
+
+function verifyRow(
+  row: LedgerEntry,
+  previousHash: string,
+  publicKey?: KeyObject | string,
+): { readonly ok: true } | { readonly ok: false; readonly reason: string } {
+  if (row.previousHash !== previousHash) {
+    return { ok: false, reason: "previous hash mismatch" };
+  }
+  const canonicalPayload = canonicalJson(payloadForVerification(row));
+  if (canonicalPayload !== row.canonicalPayload) {
+    return { ok: false, reason: "canonical payload mismatch" };
+  }
+  if (sha256Hex(`${previousHash}${canonicalPayload}`) !== row.id) {
+    return { ok: false, reason: "row hash mismatch" };
+  }
+  if (publicKey === undefined) {
+    return row.signature.length === 0 ? { ok: false, reason: "signature missing" } : { ok: true };
+  }
+  const validSignature = verify(
+    null,
+    Buffer.from(`${row.id}${row.canonicalPayload}`),
+    publicKey,
+    Buffer.from(row.signature, "base64"),
+  );
+  return validSignature ? { ok: true } : { ok: false, reason: "signature mismatch" };
 }
 
 function payloadForVerification(
@@ -280,6 +388,77 @@ function payloadForVerification(
   };
 }
 
+async function writeSqliteLedger(
+  ledgerPath: string,
+  rows: readonly LedgerEntry[],
+  publicKey: string,
+  signatureKeyId: string,
+): Promise<void> {
+  await rm(ledgerPath, { force: true });
+  const db = new Database(ledgerPath);
+  try {
+    db.pragma("journal_mode = WAL");
+    db.exec(`
+      CREATE TABLE audit_metadata (key text PRIMARY KEY, value text NOT NULL);
+      CREATE TABLE audit_ledger (
+        sequence integer PRIMARY KEY,
+        id text NOT NULL UNIQUE,
+        previous_hash text NOT NULL,
+        entry_type text NOT NULL,
+        outcome text NOT NULL,
+        canonical_payload text NOT NULL,
+        row_json text NOT NULL,
+        signature text NOT NULL,
+        signature_key_id text NOT NULL,
+        timestamp_ms integer NOT NULL
+      );
+    `);
+    db.prepare("INSERT INTO audit_metadata (key, value) VALUES (?, ?)").run(
+      "public_key_pem",
+      publicKey,
+    );
+    db.prepare("INSERT INTO audit_metadata (key, value) VALUES (?, ?)").run(
+      "signature_key_id",
+      signatureKeyId,
+    );
+    const insert = db.prepare(
+      `INSERT INTO audit_ledger
+         (sequence, id, previous_hash, entry_type, outcome, canonical_payload,
+          row_json, signature, signature_key_id, timestamp_ms)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+    for (const row of rows) {
+      insert.run(
+        row.sequence,
+        row.id,
+        row.previousHash,
+        row.entryType,
+        row.outcome,
+        row.canonicalPayload,
+        canonicalJson(row),
+        row.signature,
+        row.signatureKeyId,
+        row.timestampMs,
+      );
+    }
+  } finally {
+    db.close();
+  }
+}
+
+async function zipFiles(zipPath: string, paths: readonly string[]): Promise<void> {
+  await rm(zipPath, { force: true });
+  await execFileAsync("zip", ["-X", "-j", zipPath, ...paths]);
+}
+
+function publicKeyPem(publicKey: KeyObject): string {
+  return publicKey.export({ type: "spki", format: "pem" });
+}
+
+function signPayload(privateKey: KeyObject, id: string, canonicalPayload: string): string {
+  return sign(null, Buffer.from(`${id}${canonicalPayload}`), privateKey).toString("base64");
+}
+
 function invalidExport(
   checkedRows: number,
   firstInvalidSequence: number,
@@ -297,4 +476,12 @@ function assertLedgerEntry(row: unknown): LedgerEntry {
     throw new Error("Ledger export row is missing hash fields");
   }
   return candidate as LedgerEntry;
+}
+
+function parseLedgerEntry(rowJson: string): LedgerEntry {
+  return assertLedgerEntry(JSON.parse(rowJson) as unknown);
+}
+
+function exportStamp(untilMs: number): string {
+  return new Date(untilMs).toISOString().replace(/[:.]/gu, "-");
 }

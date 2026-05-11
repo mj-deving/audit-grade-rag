@@ -1,10 +1,14 @@
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
 import { createRuntimeApp } from "../app/runtime-app.js";
 import type { CorpusChunk } from "../domain/types.js";
-import { verifyExportedLedgerEntries } from "./audit/ledger.js";
+import {
+  readSqliteLedgerEntries,
+  verifyExportedLedgerEntries,
+  verifySqliteLedger,
+} from "./audit/ledger.js";
 import { defaultPassingEval } from "./eval/eval.js";
 import { generateArticle50Report } from "./report/report.js";
 
@@ -26,6 +30,10 @@ it("ingests fixtures, answers with citations, refuses outside corpus, exports, r
   expect(run.firstCitationChunkId).toBe(run.firstRetrievedChunkId);
   expect(run.refused.outcome).toBe("refused-out-of-corpus");
   expect(verifyExportedLedgerEntries(run.exportedRows)).toMatchObject({ ok: true });
+  expect(run.exportVerification).toMatchObject({ ok: true });
+  expect(run.tamperedVerification).toMatchObject({ ok: false, firstInvalidSequence: 1 });
+  expect(run.detachedSignatureLength).toBeGreaterThan(64);
+  expect(run.zipHeader).toBe("PK");
   expect(run.privateKeysIncluded).toBe(false);
   expect(run.report.report.outcomeBreakdown).toMatchObject({
     answered: 1,
@@ -97,10 +105,26 @@ function runQueries(app: ReturnType<typeof createRuntimeApp>) {
 async function exportLedger(app: ReturnType<typeof createRuntimeApp>, dir: string) {
   const exportDir = join(dir, "export");
   const exported = await app.ledger.exportSealed(exportDir, 0, Date.now() + 1000);
+  const tamperedPath = join(dir, "tampered.sqlite");
+  await copyFile(exported.ledgerPath, tamperedPath);
+  await flipOneByte(tamperedPath);
+  const signature = await readFile(exported.signaturePath, "utf8");
+  const zipBytes = await readFile(exported.zipPath);
   return {
-    exportedRows: parseJsonl(await readFile(exported.ledgerPath, "utf8")),
+    exportedRows: readSqliteLedgerEntries(exported.ledgerPath),
+    exportVerification: verifySqliteLedger(exported.ledgerPath),
+    tamperedVerification: verifySqliteLedger(tamperedPath),
+    detachedSignatureLength: signature.trim().length,
+    zipHeader: zipBytes.subarray(0, 2).toString("utf8"),
     privateKeysIncluded: exported.manifest.privateKeysIncluded,
   };
+}
+
+async function flipOneByte(path: string): Promise<void> {
+  const bytes = await readFile(path);
+  const index = Math.floor(bytes.length / 2);
+  bytes[index] = (bytes[index] ?? 0) ^ 1;
+  await writeFile(path, bytes);
 }
 
 async function reportLedger(app: ReturnType<typeof createRuntimeApp>) {
@@ -129,11 +153,4 @@ function firstChunk(chunks: readonly CorpusChunk[]): CorpusChunk {
     throw new Error("expected ingested chunk");
   }
   return chunk;
-}
-
-function parseJsonl(text: string): readonly unknown[] {
-  return text
-    .trim()
-    .split(/\n/u)
-    .map((line) => JSON.parse(line) as unknown);
 }

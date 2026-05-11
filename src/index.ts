@@ -7,7 +7,12 @@ export { canonicalJson, toJsonValue } from "./lib/canonical-json.js";
 export { logger } from "./lib/logger.js";
 export type { MasterPrdContract } from "./lib/master-prd.js";
 export { inspectMasterPrd, readMasterPrdContract } from "./lib/master-prd.js";
-export { AuditLedger, verifyExportedLedgerEntries } from "./modules/audit/ledger.js";
+export {
+  AuditLedger,
+  readSqliteLedgerEntries,
+  verifyExportedLedgerEntries,
+  verifySqliteLedger,
+} from "./modules/audit/ledger.js";
 export { AuthService, hashEmail, hashOperatorId, UnauthorizedError } from "./modules/auth/auth.js";
 export type { EvalMetrics, EvalRun, ExpectedOutcome, GoldenCase } from "./modules/eval/eval.js";
 export {

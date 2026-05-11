@@ -1,3 +1,4 @@
+import { readFile } from "node:fs/promises";
 import { expect, it } from "vitest";
 import type { ProviderProfile, RetrievedChunk } from "../domain/types.js";
 import { sha256Hex } from "../lib/hash.js";
@@ -139,6 +140,14 @@ it("verifies clean ledger rows and detects the first tampered row", () => {
   });
   expect(verifyExportedLedgerEntries(ledger.entries())).toMatchObject({ ok: true, checkedRows: 3 });
   expect(answered.generatedAnswerSha256).toBe(sha256Hex("Antwort"));
+});
+
+// No mocks: the regression reads the SQLite ledger source and blocks mutable ledger SQL paths.
+it("keeps application ledger SQL append-only", async () => {
+  const source = await readFile(new URL("./audit/ledger.ts", import.meta.url), "utf8");
+
+  expect(source).toContain("INSERT INTO audit_ledger");
+  expect(source).not.toMatch(/\bUPDATE\b|\bDELETE\b/iu);
 });
 
 // No mocks: replay appends result rows and returns pass, drift, and unsupported states.
