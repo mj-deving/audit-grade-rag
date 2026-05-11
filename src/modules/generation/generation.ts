@@ -71,8 +71,12 @@ export class DeterministicStubProvider implements LlmProvider {
 }
 
 export class EvidenceEchoProvider implements LlmProvider {
-  readonly profile = defaultProviderProfile;
+  readonly profile: ProviderProfile;
   calls = 0;
+
+  constructor(profile: ProviderProfile = defaultProviderProfile) {
+    this.profile = profile;
+  }
 
   generate(request: LlmRequest): string {
     this.calls += 1;

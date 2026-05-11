@@ -139,7 +139,7 @@ it("verifies clean ledger rows and detects the first tampered row", () => {
     firstInvalidSequence: 2,
   });
   expect(verifyExportedLedgerEntries(ledger.entries())).toMatchObject({ ok: true, checkedRows: 3 });
-  expect(answered.generatedAnswerSha256).toBe(sha256Hex("Antwort"));
+  expect(answered.generatedAnswerSha256).toBe(sha256Hex("CLAIM: Pflicht gilt. [chunk:chunk_a]"));
 });
 
 // No mocks: the regression reads the SQLite ledger source and blocks mutable ledger SQL paths.
@@ -155,34 +155,39 @@ it("names replay pass, drift, cloud byte mismatch, and unsupported provider stat
   const ledger = new AuditLedger();
   const answered = appendAnswered(ledger);
   const profile = providerProfile("bit_equal");
-  const pass = replayLedgerEntry(ledger, answered, profile, artifacts(answered), "Antwort");
+  const replayAnswer = "CLAIM: Pflicht gilt. [chunk:chunk_a]";
+  const pass = replayLedgerEntry(
+    ledger,
+    answered,
+    new DeterministicStubProvider([replayAnswer], profile),
+    artifacts(answered),
+  );
   const drift = replayLedgerEntry(
     ledger,
     answered,
-    profile,
+    new DeterministicStubProvider([replayAnswer], profile),
     { ...artifacts(answered), promptHash: "changed" },
-    "Antwort",
   );
   const unsupported = replayLedgerEntry(
     ledger,
     answered,
-    providerProfile("unsupported"),
+    new DeterministicStubProvider([replayAnswer], providerProfile("unsupported")),
     artifacts(answered),
-    "Antwort",
   );
   const cloud = replayLedgerEntry(
     ledger,
     answered,
-    providerProfile("drift_detect_only"),
+    new DeterministicStubProvider(["changed"], providerProfile("drift_detect_only")),
     artifacts(answered),
-    "changed",
   );
 
   expect(pass.status).toBe("passed");
+  expect(ledger.findById(pass.ledgerEntryId).outcome).toBe("replay-success");
   expect(() => {
     assertReplayPass(pass);
   }).not.toThrow();
   expect(drift).toMatchObject({ status: "drift", driftArtifact: "prompt" });
+  expect(ledger.findById(drift.ledgerEntryId).outcome).toBe("replay-drift");
   expect(() => {
     assertReplayPass(drift);
   }).toThrow(ReplayDriftError);
@@ -195,9 +200,9 @@ function appendAnswered(ledger: AuditLedger) {
     entryType: "query.answered",
     outcome: "answered",
     queryText: "Auditpflicht",
-    retrievedChunks: [],
-    generatedAnswer: "Antwort",
-    claimCitations: [],
+    retrievedChunks: chunks,
+    generatedAnswer: "CLAIM: Pflicht gilt. [chunk:chunk_a]",
+    claimCitations: [{ claimIndex: 0, chunkId: "chunk_a", marker: "[chunk:chunk_a]" }],
     modelVersion: "stub-llm@1.0.0",
     promptVersion: defaultPromptTemplate.version,
     embeddingModelVersion: defaultEmbeddingProfile.modelVersion,

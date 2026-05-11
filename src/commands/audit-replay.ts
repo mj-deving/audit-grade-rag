@@ -1,29 +1,46 @@
-import { createRuntimeApp } from "../app/runtime-app.js";
-import { replayLedgerEntry } from "../modules/replay/replay.js";
-import { writeJson } from "./args.js";
+import process from "node:process";
+import { AuditLedger } from "../modules/audit/ledger.js";
+import { EvidenceEchoProvider } from "../modules/generation/generation.js";
+import {
+  type ReplayArtifacts,
+  replayArtifactsFromEntry,
+  replayLedgerEntry,
+} from "../modules/replay/replay.js";
+import { readFlag, writeJson } from "./args.js";
 
-const app = createRuntimeApp();
-await app.ingest.ingest({ corpusDir: "examples/eu-ai-act" });
-const session = app.bootstrapOperator("operator@example.local");
-const result = app.query(session.id, "Welche Auditpflicht gilt?");
-const replay = replayLedgerEntry(
-  app.ledger,
-  result.ledgerEntry,
-  {
-    id: result.providerProfileId,
-    name: "Deterministic Stub LLM",
-    modelVersion: result.modelVersion,
-    replayCapability: "bit_equal",
-    supportsSeed: true,
-    configHash: result.providerProfileId,
-  },
-  {
-    corpusSnapshotHash: result.corpusSnapshotHash,
-    promptHash: result.promptHash,
-    embeddingModelVersion: result.embeddingModelVersion,
-    modelVersion: result.modelVersion,
-  },
-  result.answer ?? "",
-);
+const args = process.argv.slice(2);
+const ledgerPath = args[0];
+const entryId = args[1];
+if (ledgerPath === undefined || entryId === undefined || ledgerPath.startsWith("--")) {
+  throw new Error("Usage: audit-replay <ledger.sqlite> <entry-id>");
+}
 
-writeJson(replay);
+const ledger = new AuditLedger(undefined, ledgerPath);
+const entry = ledger.findById(entryId);
+const artifacts = artifactsFromArgs(args, replayArtifactsFromEntry(entry));
+const provider = new EvidenceEchoProvider({
+  id: entry.providerProfileId,
+  name: entry.providerProfileId,
+  modelVersion: artifacts.modelVersion,
+  replayCapability: entry.providerReplayCapability,
+  supportsSeed: entry.seed !== null,
+  configHash: entry.providerProfileId,
+});
+const replay = replayLedgerEntry(ledger, entry, provider, artifacts);
+
+if (replay.status === "drift") {
+  writeJson({ ...replay, error: { name: "ReplayDriftError", artifact: replay.driftArtifact } });
+  process.exitCode = 2;
+} else {
+  writeJson(replay);
+}
+
+function artifactsFromArgs(args: readonly string[], defaults: ReplayArtifacts): ReplayArtifacts {
+  return {
+    corpusSnapshotHash: readFlag(args, "--corpus-snapshot-hash") ?? defaults.corpusSnapshotHash,
+    promptHash: readFlag(args, "--prompt-hash") ?? defaults.promptHash,
+    embeddingModelVersion:
+      readFlag(args, "--embedding-model-version") ?? defaults.embeddingModelVersion,
+    modelVersion: readFlag(args, "--model-version") ?? defaults.modelVersion,
+  };
+}

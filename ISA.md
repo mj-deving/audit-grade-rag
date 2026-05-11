@@ -113,9 +113,9 @@ Deliver a self-hostable, open-source-auditable RAG application that ingests one 
 
 ### Replay
 
-- [ ] ISC-27: `audit-replay <ledger.sqlite> <entry-id>` re-issues the same query against the same `corpus_snapshot_id`, with the same model/prompt/embedding versions and seed, and asserts byte-equality with the original `generated_answer`.
-- [ ] ISC-28: Replay against a drifted artifact (corpus snapshot purged, model version retired, prompt version edited) returns a structured `ReplayDriftError` naming the drifted artifact and exits non-zero. Never silently produces a different answer.
-- [ ] ISC-29: A replay run is itself ledgered (with `outcome=replay-success` or `outcome=replay-drift`) so a regulator can see who replayed what when.
+- [x] ISC-27: `audit-replay <ledger.sqlite> <entry-id>` re-issues the same query against the same `corpus_snapshot_id`, with the same model/prompt/embedding versions and seed, and asserts byte-equality with the original `generated_answer`.
+- [x] ISC-28: Replay against a drifted artifact (corpus snapshot purged, model version retired, prompt version edited) returns a structured `ReplayDriftError` naming the drifted artifact and exits non-zero. Never silently produces a different answer.
+- [x] ISC-29: A replay run is itself ledgered (with `outcome=replay-success` or `outcome=replay-drift`) so a regulator can see who replayed what when.
 
 ### Eval harness
 

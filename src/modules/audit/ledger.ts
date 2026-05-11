@@ -1,5 +1,11 @@
 import { execFile } from "node:child_process";
-import { generateKeyPairSync, type KeyObject, sign, verify } from "node:crypto";
+import {
+  createPrivateKey,
+  createPublicKey,
+  generateKeyPairSync,
+  type KeyObject,
+  sign,
+} from "node:crypto";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -15,6 +21,14 @@ import { canonicalJson } from "../../lib/canonical-json.js";
 import { sha256Hex } from "../../lib/hash.js";
 import type { Clock } from "../../lib/time.js";
 import { systemClock } from "../../lib/time.js";
+import { normalizeLedgerInput } from "./ledger-normalize.js";
+import { parseLedgerEntry, verifyRowsWithPublicKey } from "./ledger-verify.js";
+
+export {
+  readSqliteLedgerEntries,
+  verifyExportedLedgerEntries,
+  verifySqliteLedger,
+} from "./ledger-verify.js";
 
 export type LedgerAppendInput = {
   readonly entryType: string;
@@ -71,20 +85,23 @@ export class AuditLedger {
   readonly signatureKeyId = "local-ed25519-v1";
   private readonly db: Database.Database;
   private readonly publicKey: KeyObject;
-  private readonly privateKey: KeyObject;
+  private readonly privateKey: KeyObject | null;
 
   constructor(
     private readonly clock: Clock = systemClock,
     sqlitePath = ":memory:",
   ) {
-    const pair = generateKeyPairSync("ed25519");
-    this.publicKey = pair.publicKey;
-    this.privateKey = pair.privateKey;
     this.db = new Database(sqlitePath);
     this.configureDatabase();
+    const pair = this.loadOrCreateSigningKeyPair();
+    this.publicKey = pair.publicKey;
+    this.privateKey = pair.privateKey;
   }
 
   append(input: LedgerAppendInput): LedgerEntry {
+    if (this.privateKey === null) {
+      throw new Error("Ledger signing private key unavailable");
+    }
     const timestampMs = input.timestampMs ?? this.clock.now();
     const previousHash = this.lastEntry()?.id ?? genesisHash;
     const entryBase = this.buildEntryBase(input, previousHash, timestampMs);
@@ -128,6 +145,9 @@ export class AuditLedger {
   }
 
   async exportSealed(outDir: string, sinceMs: number, untilMs: number): Promise<LedgerExport> {
+    if (this.privateKey === null) {
+      throw new Error("Ledger signing private key unavailable");
+    }
     const rows = this.entries().filter(
       (row) => row.timestampMs >= sinceMs && row.timestampMs <= untilMs,
     );
@@ -167,9 +187,38 @@ export class AuditLedger {
         timestamp_ms integer NOT NULL
       );
     `);
+  }
+
+  private loadOrCreateSigningKeyPair(): {
+    readonly publicKey: KeyObject;
+    readonly privateKey: KeyObject | null;
+  } {
+    const publicKeyRow = this.metadata("public_key_pem");
+    const privateKeyRow = this.metadata("private_key_pem");
+    if (publicKeyRow !== undefined && privateKeyRow !== undefined) {
+      return {
+        publicKey: createPublicKey(publicKeyRow),
+        privateKey: createPrivateKey(privateKeyRow),
+      };
+    }
+    if (publicKeyRow !== undefined) {
+      return { publicKey: createPublicKey(publicKeyRow), privateKey: null };
+    }
+    const pair = generateKeyPairSync("ed25519");
     this.db
       .prepare("INSERT OR IGNORE INTO audit_metadata (key, value) VALUES (?, ?)")
-      .run("public_key_pem", publicKeyPem(this.publicKey));
+      .run("public_key_pem", publicKeyPem(pair.publicKey));
+    this.db
+      .prepare("INSERT OR IGNORE INTO audit_metadata (key, value) VALUES (?, ?)")
+      .run("private_key_pem", privateKeyPem(pair.privateKey));
+    return pair;
+  }
+
+  private metadata(key: string): string | undefined {
+    const row = this.db.prepare("SELECT value FROM audit_metadata WHERE key = ?").get(key) as
+      | MetadataRow
+      | undefined;
+    return row?.value;
   }
 
   private lastEntry(): LedgerEntry | null {
@@ -206,30 +255,31 @@ export class AuditLedger {
     previousHash: string,
     timestampMs: number,
   ): Omit<LedgerEntry, "id" | "canonicalPayload" | "signature" | "signatureKeyId"> {
-    const answerHash =
-      input.generatedAnswer === undefined ? null : sha256Hex(input.generatedAnswer);
+    const normalized = normalizeLedgerInput(input);
     return {
       previousHash,
       sequence: this.entries().length + 1,
       entryType: input.entryType,
       outcome: input.outcome,
-      querySha256: sha256Hex(input.queryText ?? ""),
-      retrievedChunks: input.retrievedChunks ?? [],
-      generatedAnswerSha256: answerHash,
-      claimCitations: input.claimCitations ?? [],
-      modelVersion: input.modelVersion ?? "not-applicable",
-      promptVersion: input.promptVersion ?? "not-applicable",
-      embeddingModelVersion: input.embeddingModelVersion ?? "not-applicable",
-      providerProfileId: input.providerProfileId ?? "not-applicable",
-      providerReplayCapability: input.providerReplayCapability ?? "unsupported",
-      seed: input.seed ?? null,
-      temperature: input.temperature ?? 0,
-      corpusSnapshotId: input.corpusSnapshotId ?? "not-applicable",
-      corpusSnapshotHash: input.corpusSnapshotHash ?? "not-applicable",
-      promptHash: input.promptHash ?? "not-applicable",
+      queryText: normalized.queryText,
+      querySha256: sha256Hex(normalized.queryText ?? ""),
+      retrievedChunks: normalized.retrievedChunks,
+      generatedAnswer: normalized.generatedAnswer,
+      generatedAnswerSha256: normalized.generatedAnswerSha256,
+      claimCitations: normalized.claimCitations,
+      modelVersion: normalized.modelVersion,
+      promptVersion: normalized.promptVersion,
+      embeddingModelVersion: normalized.embeddingModelVersion,
+      providerProfileId: normalized.providerProfileId,
+      providerReplayCapability: normalized.providerReplayCapability,
+      seed: normalized.seed,
+      temperature: normalized.temperature,
+      corpusSnapshotId: normalized.corpusSnapshotId,
+      corpusSnapshotHash: normalized.corpusSnapshotHash,
+      promptHash: normalized.promptHash,
       timestampMs,
       userIdHash: input.userIdHash,
-      metadata: input.extra ?? {},
+      metadata: normalized.metadata,
     };
   }
 
@@ -274,119 +324,6 @@ export type LedgerExport = {
   readonly zipPath: string;
   readonly manifest: LedgerManifest;
 };
-
-export function verifyExportedLedgerEntries(rows: readonly unknown[]): LedgerVerification {
-  return verifyRowsWithPublicKey(rows.map(assertLedgerEntry));
-}
-
-export function readSqliteLedgerEntries(ledgerPath: string): readonly LedgerEntry[] {
-  const db = new Database(ledgerPath, { readonly: true, fileMustExist: true });
-  try {
-    const rows = db
-      .prepare("SELECT row_json FROM audit_ledger ORDER BY sequence")
-      .all() as readonly Pick<LedgerRow, "row_json">[];
-    return rows.map((row) => parseLedgerEntry(row.row_json));
-  } finally {
-    db.close();
-  }
-}
-
-export function verifySqliteLedger(ledgerPath: string): LedgerVerification {
-  try {
-    const db = new Database(ledgerPath, { readonly: true, fileMustExist: true });
-    try {
-      const rows = db
-        .prepare("SELECT row_json FROM audit_ledger ORDER BY sequence")
-        .all() as readonly Pick<LedgerRow, "row_json">[];
-      const publicKeyRow = db
-        .prepare("SELECT value FROM audit_metadata WHERE key = 'public_key_pem'")
-        .get() as MetadataRow | undefined;
-      const entries = rows.map((row) => parseLedgerEntry(row.row_json));
-      return verifyRowsWithPublicKey(entries, publicKeyRow?.value);
-    } finally {
-      db.close();
-    }
-  } catch (error) {
-    return {
-      ok: false,
-      checkedRows: 0,
-      firstInvalidSequence: 1,
-      reason: error instanceof Error ? error.message : "sqlite verification failed",
-    };
-  }
-}
-
-function verifyRowsWithPublicKey(
-  rows: readonly LedgerEntry[],
-  publicKey?: KeyObject | string,
-): LedgerVerification {
-  let previousHash = genesisHash;
-  let checkedRows = 0;
-  for (const row of rows) {
-    const result = verifyRow(row, previousHash, publicKey);
-    if (!result.ok) {
-      return invalidExport(checkedRows, row.sequence, result.reason);
-    }
-    previousHash = row.id;
-    checkedRows += 1;
-  }
-  return { ok: true, checkedRows };
-}
-
-function verifyRow(
-  row: LedgerEntry,
-  previousHash: string,
-  publicKey?: KeyObject | string,
-): { readonly ok: true } | { readonly ok: false; readonly reason: string } {
-  if (row.previousHash !== previousHash) {
-    return { ok: false, reason: "previous hash mismatch" };
-  }
-  const canonicalPayload = canonicalJson(payloadForVerification(row));
-  if (canonicalPayload !== row.canonicalPayload) {
-    return { ok: false, reason: "canonical payload mismatch" };
-  }
-  if (sha256Hex(`${previousHash}${canonicalPayload}`) !== row.id) {
-    return { ok: false, reason: "row hash mismatch" };
-  }
-  if (publicKey === undefined) {
-    return row.signature.length === 0 ? { ok: false, reason: "signature missing" } : { ok: true };
-  }
-  const validSignature = verify(
-    null,
-    Buffer.from(`${row.id}${row.canonicalPayload}`),
-    publicKey,
-    Buffer.from(row.signature, "base64"),
-  );
-  return validSignature ? { ok: true } : { ok: false, reason: "signature mismatch" };
-}
-
-function payloadForVerification(
-  row: LedgerEntry,
-): Omit<LedgerEntry, "id" | "canonicalPayload" | "signature" | "signatureKeyId"> {
-  return {
-    previousHash: row.previousHash,
-    sequence: row.sequence,
-    entryType: row.entryType,
-    outcome: row.outcome,
-    querySha256: row.querySha256,
-    retrievedChunks: row.retrievedChunks,
-    generatedAnswerSha256: row.generatedAnswerSha256,
-    claimCitations: row.claimCitations,
-    modelVersion: row.modelVersion,
-    promptVersion: row.promptVersion,
-    embeddingModelVersion: row.embeddingModelVersion,
-    providerProfileId: row.providerProfileId,
-    providerReplayCapability: row.providerReplayCapability,
-    seed: row.seed,
-    temperature: row.temperature,
-    corpusSnapshotId: row.corpusSnapshotId,
-    corpusSnapshotHash: row.corpusSnapshotHash,
-    promptHash: row.promptHash,
-    timestampMs: row.timestampMs,
-    userIdHash: row.userIdHash,
-    metadata: row.metadata,
-  };
-}
 
 async function writeSqliteLedger(
   ledgerPath: string,
@@ -455,31 +392,12 @@ function publicKeyPem(publicKey: KeyObject): string {
   return publicKey.export({ type: "spki", format: "pem" });
 }
 
+function privateKeyPem(privateKey: KeyObject): string {
+  return privateKey.export({ type: "pkcs8", format: "pem" });
+}
+
 function signPayload(privateKey: KeyObject, id: string, canonicalPayload: string): string {
   return sign(null, Buffer.from(`${id}${canonicalPayload}`), privateKey).toString("base64");
-}
-
-function invalidExport(
-  checkedRows: number,
-  firstInvalidSequence: number,
-  reason: string,
-): LedgerVerification {
-  return { ok: false, checkedRows, firstInvalidSequence, reason };
-}
-
-function assertLedgerEntry(row: unknown): LedgerEntry {
-  if (typeof row !== "object" || row === null) {
-    throw new Error("Ledger export row is not an object");
-  }
-  const candidate = row as Partial<LedgerEntry>;
-  if (typeof candidate.id !== "string" || typeof candidate.canonicalPayload !== "string") {
-    throw new Error("Ledger export row is missing hash fields");
-  }
-  return candidate as LedgerEntry;
-}
-
-function parseLedgerEntry(rowJson: string): LedgerEntry {
-  return assertLedgerEntry(JSON.parse(rowJson) as unknown);
 }
 
 function exportStamp(untilMs: number): string {
