@@ -3,7 +3,7 @@ import { createHttpApp } from "../app/http-app.js";
 import { createRuntimeApp } from "../app/runtime-app.js";
 import type { CorpusChunk } from "../domain/types.js";
 import { AuditLedger } from "./audit/ledger.js";
-import { AuthService, UnauthorizedError } from "./auth/auth.js";
+import { AuthService, sessionCookieHeader, UnauthorizedError } from "./auth/auth.js";
 import { retrieveChunks } from "./retrieval/retrieval.js";
 import { parseOperatorLocale } from "./ui/locale.js";
 
@@ -25,6 +25,9 @@ it("enforces bootstrap, passkey sessions, cookies, recovery, and rate limits", (
   expect(auth.cookiePolicy).toMatchObject({ httpOnly: true, secure: true, sameSite: "Strict" });
   expect(session.expiresAtMs - session.createdAtMs).toBe(30 * 60 * 1000);
   expect(session.absoluteExpiresAtMs - session.createdAtMs).toBe(8 * 60 * 60 * 1000);
+  expect(sessionCookieHeader(session.id, auth.cookiePolicy)).toContain(
+    "HttpOnly; Secure; SameSite=Strict",
+  );
   expect(() => auth.requireSession(null)).toThrow(UnauthorizedError);
   expect(ledger.entries().some((entry) => entry.entryType === "operator.login.success")).toBe(true);
 
