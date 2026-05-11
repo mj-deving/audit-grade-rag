@@ -1,3 +1,4 @@
+import Anthropic from "@anthropic-ai/sdk";
 import type {
   AnswerOutcome,
   Citation,
@@ -23,7 +24,7 @@ export type LlmRequest = {
 
 export type LlmProvider = {
   readonly profile: ProviderProfile;
-  generate(request: LlmRequest): string;
+  generate(request: LlmRequest): string | Promise<string>;
 };
 
 export const defaultPromptTemplate: PromptTemplate = {
@@ -82,6 +83,37 @@ export class EvidenceEchoProvider implements LlmProvider {
     this.calls += 1;
     const chunkId = request.prompt.match(/\[chunk:([A-Za-z0-9_-]+)\]/u)?.[1] ?? "missing";
     return `CLAIM: Die Antwort ist durch den Korpus belegt. [chunk:${chunkId}]`;
+  }
+}
+
+export class AnthropicMessagesProvider implements LlmProvider {
+  readonly profile: ProviderProfile;
+  private readonly client: Anthropic;
+
+  constructor(options: { readonly apiKey: string; readonly model?: string }) {
+    const model = options.model ?? "claude-sonnet-4-6";
+    this.client = new Anthropic({ apiKey: options.apiKey });
+    this.profile = {
+      id: "anthropic",
+      name: "Anthropic Claude Messages API",
+      modelVersion: model,
+      replayCapability: "drift_detect_only",
+      supportsSeed: false,
+      configHash: sha256Hex(`anthropic:${model}`),
+    };
+  }
+
+  async generate(request: LlmRequest): Promise<string> {
+    const message = await this.client.messages.create({
+      max_tokens: 512,
+      messages: [{ role: "user", content: request.prompt }],
+      model: this.profile.modelVersion,
+      temperature: request.temperature,
+    });
+    return message.content
+      .filter((block) => block.type === "text")
+      .map((block) => block.text)
+      .join("\n");
   }
 }
 
@@ -160,6 +192,9 @@ function runGenerationAttempt(
     seed,
     ...(validationFeedback === undefined ? {} : { validationFeedback }),
   });
+  if (typeof answer !== "string") {
+    throw new Error("Async LLM provider requires generateAnswerAsync");
+  }
   const claims = parseCitedClaims(answer);
   const errors = validateClaims(claims, options.trace.finalChunks, options.corpusSnapshotId);
   return {
