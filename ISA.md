@@ -89,10 +89,10 @@ Deliver a self-hostable, open-source-auditable RAG application that ingests one 
 
 ### Retrieval
 
-- [ ] ISC-12: Hybrid retrieval: BM25 (top-50) + dense vector (top-50) merged via reciprocal-rank fusion to a final top-K (default K=8, configurable per query 1..20).
-- [ ] ISC-13: Each retrieved chunk carries `(chunk_id, doc_id, page, char_offset, retrieval_score, retrieval_method)` in the response payload.
-- [ ] ISC-14: Anti: Retrieval never returns chunks from a `corpus_snapshot_id` other than the one bound to the active query.
-- [ ] ISC-15: A `relevance_score < 0.3` retrieval result for ALL top-K chunks triggers a structured `OutOfCorpus` answer instead of a generated response.
+- [x] ISC-12: Hybrid retrieval: BM25 (top-50) + dense vector (top-50) merged via reciprocal-rank fusion to a final top-K (default K=8, configurable per query 1..20).
+- [x] ISC-13: Each retrieved chunk carries `(chunk_id, doc_id, page, char_offset, retrieval_score, retrieval_method)` in the response payload.
+- [x] ISC-14: Anti: Retrieval never returns chunks from a `corpus_snapshot_id` other than the one bound to the active query.
+- [x] ISC-15: A `relevance_score < 0.3` retrieval result for ALL top-K chunks triggers a structured `OutOfCorpus` answer instead of a generated response.
 
 ### Generation and per-claim citation
 

@@ -7,6 +7,7 @@ import { Pool } from "pg";
 import { expect, it } from "vitest";
 import { AuditLedger } from "./audit/ledger.js";
 import { PostgresIngestionStore } from "./ingest/postgres-store.js";
+import { retrievePostgresChunks } from "./retrieval/postgres-retrieval.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -16,34 +17,21 @@ it("writes versioned corpus chunks and pgvector HNSW index rows", async () => {
   const dir = await mkdtemp(join(tmpdir(), "agr-pg-corpus-"));
   const pool = new Pool({ connectionString: database.url });
   try {
-    await writeCorpus(dir);
-    const ledger = new AuditLedger();
-    const store = new PostgresIngestionStore({ pool, ledger });
-    const dryRun = await store.ingest({ corpusDir: dir, dryRun: true });
-    const ingested = await store.ingest({ corpusDir: dir });
-    const unchanged = await store.ingest({ corpusDir: dir });
-    await writeFile(join(dir, "policy.md"), "Geaenderte Auditpflicht mit Snapshot-Erhalt.");
-    const changed = await store.ingest({ corpusDir: dir });
-    const active = await store.activeSnapshot();
-    const chunks = active === null ? [] : await store.chunksForSnapshot(active.id);
-    const index = await hnswIndexDefinition(pool);
-    const sample = await sampleStoredChunk(pool);
+    await runIngestAssertions(pool, dir);
+  } finally {
+    await pool.end();
+    await rm(dir, { recursive: true, force: true });
+    await database.cleanup();
+  }
+}, 120_000);
 
-    expect(dryRun).toMatchObject({ dryRun: true, documentCount: 3, activated: false });
-    expect(dryRun.estimatedIndexSizeBytes).toBeGreaterThan(0);
-    expect(ingested).toMatchObject({ activated: true, noOp: false });
-    expect(unchanged).toMatchObject({ noOp: true });
-    expect(changed.snapshot?.sequence).toBe(2);
-    expect(chunks.length).toBeGreaterThan(0);
-    expect(sample).toMatchObject({ page: 1, char_offset: 0 });
-    expect(typeof sample?.doc_id).toBe("string");
-    expect(typeof sample?.chunk_text).toBe("string");
-    expect(index).toContain("USING hnsw");
-    expect(index).toContain("m='16'");
-    expect(index).toContain("ef_construction='128'");
-    expect(ledger.entries().some((entry) => entry.entryType === "corpus.ingest.completed")).toBe(
-      true,
-    );
+// No mocks: retrieval reads real Postgres tsvector and pgvector indexes from a versioned corpus.
+it("runs snapshot-bound BM25 plus dense retrieval with RRF and refusal", async () => {
+  const database = await postgresDatabase();
+  const dir = await mkdtemp(join(tmpdir(), "agr-pg-retrieval-"));
+  const pool = new Pool({ connectionString: database.url });
+  try {
+    await runRetrievalAssertions(pool, dir);
   } finally {
     await pool.end();
     await rm(dir, { recursive: true, force: true });
@@ -55,6 +43,72 @@ type DatabaseHandle = {
   readonly url: string;
   cleanup(): Promise<void>;
 };
+
+async function runIngestAssertions(pool: Pool, dir: string): Promise<void> {
+  await writeCorpus(dir);
+  const ledger = new AuditLedger();
+  const store = new PostgresIngestionStore({ pool, ledger });
+  const dryRun = await store.ingest({ corpusDir: dir, dryRun: true });
+  const ingested = await store.ingest({ corpusDir: dir });
+  const unchanged = await store.ingest({ corpusDir: dir });
+  await writeFile(join(dir, "policy.md"), "Geaenderte Auditpflicht mit Snapshot-Erhalt.");
+  const changed = await store.ingest({ corpusDir: dir });
+  const active = await store.activeSnapshot();
+  const chunks = active === null ? [] : await store.chunksForSnapshot(active.id);
+  const index = await hnswIndexDefinition(pool);
+  const sample = await sampleStoredChunk(pool);
+
+  expect(dryRun).toMatchObject({ dryRun: true, documentCount: 3, activated: false });
+  expect(dryRun.estimatedIndexSizeBytes).toBeGreaterThan(0);
+  expect(ingested).toMatchObject({ activated: true, noOp: false });
+  expect(unchanged).toMatchObject({ noOp: true });
+  expect(changed.snapshot?.sequence).toBe(2);
+  expect(chunks.length).toBeGreaterThan(0);
+  expect(sample).toMatchObject({ page: 1, char_offset: 0 });
+  expect(typeof sample?.doc_id).toBe("string");
+  expect(typeof sample?.chunk_text).toBe("string");
+  expect(index).toContain("USING hnsw");
+  expect(index).toContain("m='16'");
+  expect(index).toContain("ef_construction='128'");
+  expect(ledger.entries().some((entry) => entry.entryType === "corpus.ingest.completed")).toBe(
+    true,
+  );
+}
+
+async function runRetrievalAssertions(pool: Pool, dir: string): Promise<void> {
+  await writeRetrievalCorpus(dir);
+  const store = new PostgresIngestionStore({ pool, ledger: new AuditLedger() });
+  const ingested = await store.ingest({ corpusDir: dir });
+  await writeFile(join(dir, "doc-00.md"), "Aktualisierte Auditpflicht ohne alte Marker.");
+  const changed = await store.ingest({ corpusDir: dir });
+  const firstSnapshotId = requireSnapshotId(ingested.snapshot);
+  const secondSnapshotId = requireSnapshotId(changed.snapshot);
+  const trace = await retrievePostgresChunks(pool, "Auditpflicht beleg alpha", {
+    activeSnapshotId: firstSnapshotId,
+  });
+  const currentTrace = await retrievePostgresChunks(pool, "Aktualisierte Auditpflicht", {
+    activeSnapshotId: secondSnapshotId,
+    topK: 6,
+  });
+  const refused = await retrievePostgresChunks(pool, "zzzz yyyyy xxxx", {
+    activeSnapshotId: secondSnapshotId,
+  });
+
+  expect(trace.vectorCandidates).toHaveLength(50);
+  expect(trace.bm25Candidates).toHaveLength(50);
+  expect(trace.finalChunks).toHaveLength(8);
+  expect(trace.finalChunks.every((chunk) => chunk.corpusSnapshotId === firstSnapshotId)).toBe(true);
+  expect(trace.finalChunks[0]).toMatchObject({
+    retrievalMethod: "rrf",
+    pageStart: 1,
+    charStart: 0,
+  });
+  expect(currentTrace.finalChunks).toHaveLength(6);
+  expect(
+    currentTrace.finalChunks.every((chunk) => chunk.corpusSnapshotId === secondSnapshotId),
+  ).toBe(true);
+  expect(refused.outOfCorpus).toBe(true);
+}
 
 async function postgresDatabase(): Promise<DatabaseHandle> {
   const { DATABASE_URL, TEST_DATABASE_URL } = process.env;
@@ -154,6 +208,22 @@ async function writeCorpus(dir: string): Promise<void> {
   await writeFile(join(dir, "policy.md"), "Jede beantwortete Anfrage braucht Auditpflicht.");
   await writeFile(join(dir, "scan.pdf"), "SCANNED-PDF OCR-REQUIRED Auditpflicht.");
   await writeFile(join(dir, "handbuch.docx"), "DOCX-FIXTURE WebAuthn ist erforderlich.");
+}
+
+async function writeRetrievalCorpus(dir: string): Promise<void> {
+  for (let index = 0; index < 60; index += 1) {
+    await writeFile(
+      join(dir, `doc-${String(index).padStart(2, "0")}.md`),
+      `Auditpflicht beleg alpha nummer ${String(index)} fuer versionierte Korpusabfrage.`,
+    );
+  }
+}
+
+function requireSnapshotId(snapshot: { readonly id: string } | null): string {
+  if (snapshot === null) {
+    throw new Error("expected snapshot");
+  }
+  return snapshot.id;
 }
 
 async function hnswIndexDefinition(pool: Pool): Promise<string> {

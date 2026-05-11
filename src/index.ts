@@ -40,6 +40,7 @@ export type { ReplayArtifacts, ReplayResult } from "./modules/replay/replay.js";
 export { assertReplayPass, ReplayDriftError, replayLedgerEntry } from "./modules/replay/replay.js";
 export type { Article50Report, ReportBundle, ReportRequest } from "./modules/report/report.js";
 export { generateArticle50Report, reportWindowLabel } from "./modules/report/report.js";
+export { retrievePostgresChunks } from "./modules/retrieval/postgres-retrieval.js";
 export { parseTopK, reciprocalRankFusion, retrieveChunks } from "./modules/retrieval/retrieval.js";
 export {
   assertNoPromptSecrets,
