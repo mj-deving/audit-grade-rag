@@ -62,12 +62,65 @@ it("does not expose password login fields on the operator auth route", async () 
   expect(html).not.toMatch(/password/iu);
 });
 
+// No mocks: HTTP auth routes use the production auth service and issue the real session cookie.
+it("runs magic-link bootstrap, passkey registration, and passkey-only login over HTTP", async () => {
+  const app = createHttpApp(createRuntimeApp());
+  const magicLink = await postJson(app, "/api/auth/magic-link/request", {
+    email: "operator@example.local",
+  });
+  expect(magicLink.data).toMatchObject({ status: "accepted", recoveryOnly: false });
+
+  const consumed = await postJson(app, "/api/auth/magic-link/consume", {
+    token: stringField(magicLink.data, "localDeliveryToken"),
+  });
+  expect(consumed.data).toMatchObject({ webauthnRegistrationRequired: true });
+
+  await postJson(app, "/api/auth/webauthn/register/verify", {
+    operatorId: stringField(consumed.data, "operatorId"),
+    credentialId: "local-passkey",
+  });
+
+  const recovery = await postJson(app, "/api/auth/magic-link/request", {
+    email: "operator@example.local",
+  });
+  expect(recovery.data).toMatchObject({ recoveryOnly: true });
+
+  const login = await app.request("/api/auth/webauthn/authenticate/verify", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      operatorId: stringField(consumed.data, "operatorId"),
+      credentialId: "local-passkey",
+    }),
+  });
+  expect(login.status).toBe(200);
+  expect(login.headers.get("set-cookie")).toContain("HttpOnly; Secure; SameSite=Strict");
+});
+
 // No mocks: locale negotiation runs through the production Accept-Language parser.
 it("keeps de-DE as the only fully translated operator locale", () => {
   expect(parseOperatorLocale("de-AT,de;q=0.9,en;q=0.2")).toBe("de-DE");
   expect(parseOperatorLocale("en-US,en;q=0.9")).toBe("de-DE");
   expect(parseOperatorLocale(null)).toBe("de-DE");
 });
+
+async function postJson(app: ReturnType<typeof createHttpApp>, path: string, body: object) {
+  const response = await app.request(path, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  expect(response.status).toBe(200);
+  return (await response.json()) as { readonly data: Record<string, unknown> };
+}
+
+function stringField(body: Record<string, unknown>, field: string): string {
+  const value = body[field];
+  if (typeof value !== "string") {
+    throw new Error(`expected string field ${field}`);
+  }
+  return value;
+}
 
 // No mocks: retrieval ranks real chunk records with deterministic dense, BM25, and RRF logic.
 it("returns bounded deterministic active-snapshot hybrid retrieval", () => {
