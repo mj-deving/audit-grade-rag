@@ -2,12 +2,14 @@ import type { Context } from "hono";
 import { Hono } from "hono";
 import { UnauthorizedError } from "../modules/auth/auth.js";
 import { renderAuthOperator } from "../modules/ui/console.js";
+import { parseOperatorLocale } from "../modules/ui/locale.js";
 import type { RuntimeApp } from "./runtime-app.js";
 
 export function createHttpApp(runtime: RuntimeApp): Hono {
   const app = new Hono();
 
   app.get("/auth/operator", (context) => {
+    parseOperatorLocale(context.req.header("accept-language"));
     const view = renderAuthOperator();
     return context.html(view.html, 200, {
       "content-security-policy": view.csp,
