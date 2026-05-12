@@ -10,6 +10,8 @@ import {
   optionalEnv,
 } from "./live-provider.js";
 
+const DEFAULT_TEI_CPU_DTYPE = "float32";
+
 describe("bge-m3 L4 provider contract", () => {
   it("calls an OpenAI-compatible bge-m3 embedding endpoint when live provider tests are enabled", async () => {
     if (!liveProviderEnabled()) {
@@ -76,7 +78,7 @@ async function startTeiBgeM3Endpoint(): Promise<EmbeddingEndpoint> {
         "--served-model-name",
         "bge-m3",
         "--dtype",
-        optionalEnv("BGE_M3_DTYPE") ?? "float16",
+        optionalEnv("BGE_M3_DTYPE") ?? DEFAULT_TEI_CPU_DTYPE,
         "--max-batch-tokens",
         optionalEnv("BGE_M3_MAX_BATCH_TOKENS") ?? "1024",
         "--max-concurrent-requests",

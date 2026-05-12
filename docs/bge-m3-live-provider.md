@@ -3,7 +3,7 @@
 This runbook covers the remaining L4 embedding-provider gate. The live test is
 `tests/integration-live/bge-m3.spec.ts`.
 
-## Preferred: Shared Host TEI
+## Preferred: VPS TEI
 
 Use this path when WSL should not spend local CPU, memory, or disk on the bge-m3
 model.
@@ -13,26 +13,30 @@ Required operator input:
 - SSH target reachable from WSL, for example `user@host` or an SSH config alias.
 - Whether Docker is already available on that host.
 - Allowed host resource budget: CPU, RAM, and disk.
-- Whether the TEI container should remain running after verification.
+- Whether the TEI container should remain running after verification. The default
+  cleanup posture is to stop the container and keep only the model cache.
 - Preferred local tunnel port. Default: `18080`.
 
-Remote TEI command shape:
+Remote TEI command shape for a CPU host:
 
 ```bash
 docker run --rm -d \
   --name audit-grade-rag-bge-m3 \
-  --cpus 2 \
-  --memory 4g \
+  --cpus 6 \
+  --memory 16g \
   -p 127.0.0.1:18080:80 \
   -v "$HOME/audit-grade-rag-bge-m3-cache:/data" \
   ghcr.io/huggingface/text-embeddings-inference:cpu-latest \
   --model-id BAAI/bge-m3 \
   --served-model-name bge-m3 \
-  --dtype float16 \
+  --dtype float32 \
   --max-batch-tokens 1024 \
   --max-concurrent-requests 8 \
   --max-client-batch-size 1
 ```
+
+The CPU TEI image can reject `float16` for bge-m3 ONNX Runtime execution. Use
+`float32` unless the target host is known to support a different dtype.
 
 Local tunnel command shape:
 
@@ -58,6 +62,7 @@ Default local caps:
 
 - `BGE_M3_DOCKER_CPUS=2`
 - `BGE_M3_DOCKER_MEMORY=4g`
+- `BGE_M3_DTYPE=float32`
 - `BGE_M3_STARTUP_TIMEOUT_SECONDS=7200`
 
 Command:
@@ -70,6 +75,12 @@ Stop any local TEI container if the run is interrupted:
 
 ```bash
 docker ps --format '{{.Names}}' | rg '^agr-live-bge-m3-' | xargs -r docker rm -f
+```
+
+Stop the VPS container after a tunneled run when it should not stay resident:
+
+```bash
+ssh <ssh-target> 'docker rm -f audit-grade-rag-bge-m3'
 ```
 
 ## Endpoint Contract
