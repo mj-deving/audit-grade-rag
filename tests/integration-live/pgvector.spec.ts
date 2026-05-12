@@ -1,14 +1,8 @@
-import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { promisify } from "node:util";
 import { Client } from "pg";
 import { describe, expect, it } from "vitest";
 
+import { createDockerConfig, docker, dockerPort } from "./docker.js";
 import { disabledLiveProvider, liveProviderEnabled, optionalEnv } from "./live-provider.js";
-
-const execFileAsync = promisify(execFile);
 
 describe("pgvector L4 provider contract", () => {
   it("runs vector SQL against Postgres when live provider tests are enabled", async () => {
@@ -49,8 +43,7 @@ async function postgresDatabase(): Promise<DatabaseHandle> {
     return { url: configured, cleanup: () => Promise.resolve() };
   }
 
-  const dockerConfigDir = await mkdtemp(join(tmpdir(), "agr-live-docker-config-"));
-  await writeFile(join(dockerConfigDir, "config.json"), "{}");
+  const dockerConfig = await createDockerConfig();
   const name = `agr-live-pgvector-${String(process.pid)}-${String(Date.now())}`;
   await docker(
     "run",
@@ -69,17 +62,17 @@ async function postgresDatabase(): Promise<DatabaseHandle> {
       "127.0.0.1::5432",
       "pgvector/pgvector:pg16",
     ],
-    dockerConfigDir,
+    dockerConfig.dir,
   );
-  const port = await dockerPort(name, dockerConfigDir);
-  await waitForPostgres(name, dockerConfigDir);
+  const port = await dockerPort(name, "5432/tcp", dockerConfig.dir);
+  await waitForPostgres(name, dockerConfig.dir);
   const url = `postgres://audit_grade_rag:audit_grade_rag@127.0.0.1:${port}/audit_grade_rag`;
   await waitForSql(url);
   return {
     url,
     cleanup: async () => {
-      await docker("rm", ["-f", name], dockerConfigDir);
-      await rm(dockerConfigDir, { recursive: true, force: true });
+      await docker("rm", ["-f", name], dockerConfig.dir);
+      await dockerConfig.cleanup();
     },
   };
 }
@@ -98,27 +91,6 @@ async function waitForSql(url: string): Promise<void> {
     }
   }
   throw new Error("postgres did not accept SQL connections");
-}
-
-async function docker(
-  command: string,
-  args: readonly string[],
-  dockerConfigDir: string,
-): Promise<string> {
-  const result = await execFileAsync("docker", [command, ...args], {
-    encoding: "utf8",
-    env: { ...process.env, DOCKER_CONFIG: dockerConfigDir },
-  });
-  return result.stdout.trim();
-}
-
-async function dockerPort(containerName: string, dockerConfigDir: string): Promise<string> {
-  const output = await docker("port", [containerName, "5432/tcp"], dockerConfigDir);
-  const port = output.match(/:(\d+)$/u)?.[1];
-  if (port === undefined) {
-    throw new Error(`could not discover postgres port for ${containerName}`);
-  }
-  return port;
 }
 
 async function waitForPostgres(containerName: string, dockerConfigDir: string): Promise<void> {
