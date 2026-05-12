@@ -96,7 +96,7 @@ Deliver a self-hostable, open-source-auditable RAG application that ingests one 
 
 ### Generation and per-claim citation
 
-- [ ] ISC-16: LLM call uses `temperature=0`, fixed seed (default `42`, configurable), frozen `model_version`, frozen `prompt_version` (e.g. `prompts/answer/v3.tmpl`).
+- [x] ISC-16: LLM call uses `temperature=0`, fixed seed (default `42`, configurable), frozen `model_version`, frozen `prompt_version` (e.g. `prompts/answer/v3.tmpl`).
 - [x] ISC-17: The generation prompt instructs the model to emit assertions tagged with `[chunk:<chunk_id>]` markers; the response parser extracts assertions and their citation lists.
 - [x] ISC-18: A post-generation validator rejects any assertion lacking at least one valid `chunk_id` reference; rejected outputs trigger one regeneration attempt with the validator feedback in the prompt; second failure surfaces a structured `UngroundedGenerationError` to the operator.
 - [x] ISC-19: Anti: An answer with at least one uncited claim is never returned to the operator. The validator block is itself recorded in the audit ledger.
