@@ -122,7 +122,7 @@ Deliver a self-hostable, open-source-auditable RAG application that ingests one 
 - [x] ISC-30: Golden set lives at `eval/golden/v<N>.jsonl` with `{question, expected_outcome, expected_chunks?, tags[]}`. Tags include `ambiguous`, `out-of-corpus`, `contradictory`, `multi-hop`, `numerical`.
 - [x] ISC-31: `pnpm eval` runs all golden questions against a pinned (model, prompt, corpus_snapshot) tuple and outputs `groundedness`, `citation-accuracy`, `refusal-correctness`, and per-tag breakdowns.
 - [x] ISC-32: Eval thresholds: groundedness ≥ 0.95, citation-accuracy ≥ 0.95, refusal-correctness ≥ 0.90. Fall below threshold → `pnpm eval` exits non-zero.
-- [ ] ISC-33: The eval harness is part of `pnpm check:full` and therefore part of the GoalMode-style done-contract.
+- [x] ISC-33: The eval harness is part of `pnpm check:full` and therefore part of the GoalMode-style done-contract.
 - [x] ISC-34: Anti: `pnpm eval` does not pass on an empty golden set. Empty-set runs are explicit failures.
 
 ### Regulator report (EU AI Act §50)
