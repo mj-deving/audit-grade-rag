@@ -82,14 +82,14 @@ Deliver a self-hostable, open-source-auditable RAG application that ingests one 
 ### Corpus ingestion and indexing
 
 - [x] ISC-7: `pnpm ingest --corpus <dir>` walks a watched directory, extracts text from PDF / DOCX / Markdown, OCRs scanned PDFs via tesseract, chunks at 800-token windows with 100-token overlap, and writes `(doc_id, page, char_offset, chunk_text)` rows to Postgres.
-- [ ] ISC-8: Each chunk row is embedded via the configured embedding model and indexed in `pgvector` HNSW with `m=16, ef_construction=128`.
+- [x] ISC-8: Each chunk row is embedded via the configured embedding model and indexed in `pgvector` HNSW with `m=16, ef_construction=128`.
 - [x] ISC-9: Re-ingestion of an unchanged document is a no-op (content hash check); a changed document creates a new `corpus_snapshot_id` and the previous chunks remain queryable for replay.
 - [x] ISC-10: A `corpus_snapshot_id` is recorded in the audit ledger for every query so old answers replay against the corpus state they were generated against.
-- [ ] ISC-11: `pnpm ingest --dry-run` reports document count, chunk count, embedding-model name, and estimated index size without writing.
+- [x] ISC-11: `pnpm ingest --dry-run` reports document count, chunk count, embedding-model name, and estimated index size without writing.
 
 ### Retrieval
 
-- [ ] ISC-12: Hybrid retrieval: BM25 (top-50) + dense vector (top-50) merged via reciprocal-rank fusion to a final top-K (default K=8, configurable per query 1..20).
+- [x] ISC-12: Hybrid retrieval: BM25 (top-50) + dense vector (top-50) merged via reciprocal-rank fusion to a final top-K (default K=8, configurable per query 1..20).
 - [x] ISC-13: Each retrieved chunk carries `(chunk_id, doc_id, page, char_offset, retrieval_score, retrieval_method)` in the response payload.
 - [x] ISC-14: Anti: Retrieval never returns chunks from a `corpus_snapshot_id` other than the one bound to the active query.
 - [x] ISC-15: A `relevance_score < 0.3` retrieval result for ALL top-K chunks triggers a structured `OutOfCorpus` answer instead of a generated response.
@@ -113,15 +113,15 @@ Deliver a self-hostable, open-source-auditable RAG application that ingests one 
 
 ### Replay
 
-- [ ] ISC-27: `audit-replay <ledger.sqlite> <entry-id>` re-issues the same query against the same `corpus_snapshot_id`, with the same model/prompt/embedding versions and seed, and asserts byte-equality with the original `generated_answer`.
-- [ ] ISC-28: Replay against a drifted artifact (corpus snapshot purged, model version retired, prompt version edited) returns a structured `ReplayDriftError` naming the drifted artifact and exits non-zero. Never silently produces a different answer.
-- [ ] ISC-29: A replay run is itself ledgered (with `outcome=replay-success` or `outcome=replay-drift`) so a regulator can see who replayed what when.
+- [x] ISC-27: `audit-replay <ledger.sqlite> <entry-id>` re-issues the same query against the same `corpus_snapshot_id`, with the same model/prompt/embedding versions and seed, and asserts byte-equality with the original `generated_answer`.
+- [x] ISC-28: Replay against a drifted artifact (corpus snapshot purged, model version retired, prompt version edited) returns a structured `ReplayDriftError` naming the drifted artifact and exits non-zero. Never silently produces a different answer.
+- [x] ISC-29: A replay run is itself ledgered (with `outcome=replay-success` or `outcome=replay-drift`) so a regulator can see who replayed what when.
 
 ### Eval harness
 
 - [x] ISC-30: Golden set lives at `eval/golden/v<N>.jsonl` with `{question, expected_outcome, expected_chunks?, tags[]}`. Tags include `ambiguous`, `out-of-corpus`, `contradictory`, `multi-hop`, `numerical`.
-- [ ] ISC-31: `pnpm eval` runs all golden questions against a pinned (model, prompt, corpus_snapshot) tuple and outputs `groundedness`, `citation-accuracy`, `refusal-correctness`, and per-tag breakdowns.
-- [ ] ISC-32: Eval thresholds: groundedness ≥ 0.95, citation-accuracy ≥ 0.95, refusal-correctness ≥ 0.90. Fall below threshold → `pnpm eval` exits non-zero.
+- [x] ISC-31: `pnpm eval` runs all golden questions against a pinned (model, prompt, corpus_snapshot) tuple and outputs `groundedness`, `citation-accuracy`, `refusal-correctness`, and per-tag breakdowns.
+- [x] ISC-32: Eval thresholds: groundedness ≥ 0.95, citation-accuracy ≥ 0.95, refusal-correctness ≥ 0.90. Fall below threshold → `pnpm eval` exits non-zero.
 - [ ] ISC-33: The eval harness is part of `pnpm check:full` and therefore part of the GoalMode-style done-contract.
 - [x] ISC-34: Anti: `pnpm eval` does not pass on an empty golden set. Empty-set runs are explicit failures.
 
