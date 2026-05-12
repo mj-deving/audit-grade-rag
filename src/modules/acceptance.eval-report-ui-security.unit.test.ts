@@ -266,7 +266,7 @@ it("redacts content, blocks egress, and keeps the full build gate wired", () => 
   expect(residency).toContain("The only permitted outbound egress in v1");
   expect(residency).toContain("api.anthropic.com");
   expect(readFileSync("package.json", "utf8")).toContain(
-    "pnpm check:fast && pnpm test:integration && pnpm test:e2e && pnpm eval",
+    "pnpm check:fast && pnpm test:integration && pnpm test:integration:live && pnpm test:e2e && pnpm eval",
   );
   const ci = readFileSync(".github/workflows/ci.yml", "utf8");
   expect(ci).toContain("pnpm check:full");

@@ -1,0 +1,76 @@
+{
+  "status": "fail",
+  "isaPath": "/home/mj/projects/audit-grade-rag/ISA.md",
+  "prdPath": "/home/mj/projects/audit-grade-rag/docs/MASTER_PRD.md",
+  "detectedProviders": [
+    "LLM provider",
+    "Embedding model",
+    "Vector store",
+    "PDF renderer",
+    "Auth library",
+    "UI framework"
+  ],
+  "section75": {
+    "totalEntries": 0,
+    "declaredCategories": [
+      "LLM provider",
+      "Embedding model",
+      "Vector store",
+      "PDF renderer",
+      "Auth library",
+      "UI framework"
+    ],
+    "coveredCategories": [],
+    "uncoveredCategories": [
+      "LLM provider",
+      "Embedding model",
+      "Vector store",
+      "PDF renderer",
+      "Auth library",
+      "UI framework"
+    ],
+    "orphanUnknownEntries": [],
+    "pureScopeDriftEntries": [],
+    "mixedScopeDriftEntries": [],
+    "perEntryCoverage": []
+  },
+  "offendingTestStrategyRows": 3,
+  "wiring": {
+    "checked": true,
+    "projectDir": "/home/mj/projects/audit-grade-rag",
+    "integrationLiveDir": {
+      "exists": false,
+      "testFileCount": 0
+    },
+    "hasLiveScript": false,
+    "checkFullInvokesLive": false,
+    "hasIntegrationLiveProject": false,
+    "gaps": [
+      "tests/integration-live/ directory does not exist at /home/mj/projects/audit-grade-rag/tests/integration-live",
+      "package.json scripts.test:integration:live is missing",
+      "package.json scripts.check:full does not invoke test:integration:live",
+      "/home/mj/projects/audit-grade-rag/vitest.config.ts does not define an 'integration-live' project"
+    ]
+  },
+  "violations": [
+    {
+      "rule": "structure",
+      "message": "MASTER_PRD is missing the '## §7.5' Live-Provider Integration Tests section. Add it per MasterPRD workflow Phase 3.5."
+    },
+    {
+      "rule": "rule-8-missing-coverage",
+      "message": "ISA ## Constraints names 6 provider categor(y/ies); 6 of them have NO matching §7.5.<N> entry in MASTER_PRD. An entry counts as covering a category only if its heading or body mentions a keyword from that category (e.g. \"anthropic\" for LLM, \"typst\" for PDF). Add or extend §7.5 entries to cover the uncovered categories below.",
+      "evidence": "Uncovered categories (need §7.5 entries):\n  - LLM provider\n  - Embedding model\n  - Vector store\n  - PDF renderer\n  - Auth library\n  - UI framework\n\nCovered categories (already have at least one §7.5 entry):\n  (none)\n\nTotal §7.5.<N> entries in PRD: 0"
+    },
+    {
+      "rule": "rule-9-stub-on-provider",
+      "message": "ISA ## Test Strategy contains 3 row(s) that specify stub/mock/in-memory/fake for ISCs while ISA ## Constraints names real providers. Replace these with real-call test specifications (e.g. 'Vitest + @anthropic-ai/sdk live call').",
+      "evidence": "  | ISC-16..20 | integration + unit | Unit-test the citation-validator on synthetic outputs; integration-test full generate→validate→regenerate path with a stubbe\n  | ISC-27..29 | integration | Replay a freshly-written ledger row; replay against drifted (manually-edited) prompt version → expect ReplayDriftError | Byte-equal\n  | ISC-44..47 | unit + integration | Logger redaction unit tests; deletion-tombstone integration test; egress-allowlist test (mock outbound) | No PII in INFO log"
+    },
+    {
+      "rule": "rule-8-missing-wiring",
+      "message": "L4 live-provider contract is documented but NOT wired on disk. Hard Rule #8 requires tests/integration-live/ with ≥1 test, package.json scripts.test:integration:live, check:full chaining it, and vitest.config.ts declaring an 'integration-live' project. 4 gap(s) below. Fix per Bootstrap Phase 5 + Phase 6.",
+      "evidence": "  - tests/integration-live/ directory does not exist at /home/mj/projects/audit-grade-rag/tests/integration-live\n  - package.json scripts.test:integration:live is missing\n  - package.json scripts.check:full does not invoke test:integration:live\n  - /home/mj/projects/audit-grade-rag/vitest.config.ts does not define an 'integration-live' project"
+    }
+  ]
+}

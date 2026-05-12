@@ -55,23 +55,53 @@ function registerAuthRoutes(app: Hono, runtime: RuntimeApp): void {
     const consumed = runtime.auth.consumeMagicLink(token);
     return context.json({ ok: true, data: consumed });
   });
+  registerPasskeyRoutes(app, runtime);
+}
 
+function registerPasskeyRoutes(app: Hono, runtime: RuntimeApp): void {
   app.post("/api/auth/webauthn/register/verify", async (context) => {
     const body = await readJson(context.req.raw);
     const operatorId = requiredString(body, "operatorId");
-    const credentialId = requiredString(body, "credentialId");
-    const operator = runtime.auth.registerPasskey(operatorId, credentialId);
+    const operator = runtime.auth.registerPasskey({
+      operatorId,
+      credentialId: requiredString(body, "credentialId"),
+      publicKeyPem: requiredString(body, "publicKeyPem"),
+      challenge: requiredString(body, "challenge"),
+      signatureBase64Url: requiredString(body, "signatureBase64Url"),
+    });
     return context.json({
       ok: true,
       data: { operatorId: operator.id, passkeyRegistered: operator.passkeyRegistered },
     });
   });
 
+  app.post("/api/auth/webauthn/register/options", async (context) => {
+    const body = await readJson(context.req.raw);
+    const operatorId = requiredString(body, "operatorId");
+    return context.json({
+      ok: true,
+      data: runtime.auth.createPasskeyRegistrationOptions(operatorId),
+    });
+  });
+
+  app.post("/api/auth/webauthn/authenticate/options", async (context) => {
+    const body = await readJson(context.req.raw);
+    const operatorId = requiredString(body, "operatorId");
+    return context.json({
+      ok: true,
+      data: runtime.auth.createPasskeyAuthenticationOptions(operatorId),
+    });
+  });
+
   app.post("/api/auth/webauthn/authenticate/verify", async (context) => {
     const body = await readJson(context.req.raw);
     const operatorId = requiredString(body, "operatorId");
-    const credentialId = requiredString(body, "credentialId");
-    const session = runtime.auth.loginWithPasskey(operatorId, credentialId);
+    const session = runtime.auth.loginWithPasskey({
+      operatorId,
+      credentialId: requiredString(body, "credentialId"),
+      challenge: requiredString(body, "challenge"),
+      signatureBase64Url: requiredString(body, "signatureBase64Url"),
+    });
     return context.json(
       { ok: true, data: { sessionId: session.id, expiresAtMs: session.expiresAtMs } },
       200,
