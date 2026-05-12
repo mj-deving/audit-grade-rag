@@ -4,7 +4,7 @@
 
 **Self-hosted RAG that can answer, cite, replay, and report every response.**
 
-[![CI](https://github.com/mj-deving/audit-grade-rag/actions/workflows/ci.yml/badge.svg?branch=goalmode/bootstrap-guardrails)](https://github.com/mj-deving/audit-grade-rag/actions/workflows/ci.yml)
+[![CI](https://github.com/mj-deving/audit-grade-rag/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mj-deving/audit-grade-rag/actions/workflows/ci.yml)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)
 ![Node](https://img.shields.io/badge/Node-22-3c873a?logo=node.js&logoColor=white)
 ![pnpm](https://img.shields.io/badge/pnpm-9-f69220?logo=pnpm&logoColor=white)
@@ -34,6 +34,10 @@ try the product surface.
 
 <p align="center">
   <img src="docs/assets/console-mobile.png" alt="Audit-Grade RAG mobile operator console" width="260">
+</p>
+
+<p align="center">
+  <a href="docs/assets/console-tour.mp4">90-second console tour</a>
 </p>
 
 ## Why This Exists
