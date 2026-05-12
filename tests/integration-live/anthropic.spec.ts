@@ -1,36 +1,64 @@
 import { describe, expect, it } from "vitest";
 
-import { AnthropicMessagesProvider } from "../../src/modules/generation/generation.js";
+import type { RetrievedChunk } from "../../src/domain/types.js";
 import {
-  disabledLiveProvider,
-  liveProviderEnabled,
-  optionalEnv,
-  requiredEnv,
-} from "./live-provider.js";
+  ClaudeCliJsonProvider,
+  generateAnswerAsync,
+} from "../../src/modules/generation/generation.js";
+import { disabledLiveProvider, liveProviderEnabled, optionalEnv } from "./live-provider.js";
 
-describe("Anthropic L4 provider contract", () => {
-  it("calls the Anthropic Messages API when live provider tests are enabled", async () => {
+describe("Claude CLI OAuth L4 provider contract", () => {
+  it("calls Claude Code with structured output when live provider tests are enabled", async () => {
     if (!liveProviderEnabled()) {
-      expect(disabledLiveProvider("anthropic")).toMatchObject({
-        category: "anthropic",
+      expect(disabledLiveProvider("claude-cli")).toMatchObject({
+        category: "claude-cli",
         live: false,
       });
       return;
     }
 
-    const apiKey = requiredEnv("ANTHROPIC_API_KEY", "anthropic");
-    const model = optionalEnv("ANTHROPIC_MODEL") ?? "claude-sonnet-4-6";
-    const provider = new AnthropicMessagesProvider({ apiKey, model });
-    const output = await provider.generate({
-      modelVersion: provider.profile.modelVersion,
-      prompt:
-        "Return one short German compliance assertion and include the marker [chunk:l4_anthropic].",
-      promptVersion: "l4-anthropic@1.0.0",
-      seed: null,
-      temperature: 0,
+    const model = optionalEnv("CLAUDE_MODEL") ?? "claude-sonnet-4-6";
+    const provider = new ClaudeCliJsonProvider({ model });
+    const output = await generateAnswerAsync({
+      query: "Welche Auditpflicht gilt laut Evidenz?",
+      trace: {
+        vectorCandidates: [liveChunk],
+        bm25Candidates: [liveChunk],
+        mergedCandidates: [liveChunk],
+        finalChunks: [liveChunk],
+        outOfCorpus: false,
+      },
+      corpusSnapshotId: liveChunk.corpusSnapshotId,
+      corpusSnapshotHash: liveChunk.corpusSnapshotHash,
+      provider,
     });
 
-    expect(output).toContain("[chunk:l4_anthropic]");
+    expect(output.outcome).toBe("answered");
+    expect(output.answer).toContain("[chunk:l4_claude_cli]");
+    expect(provider.profile.id).toBe("claude-cli-oauth");
     expect(provider.profile.replayCapability).toBe("drift_detect_only");
   });
 });
+
+const liveChunk: RetrievedChunk = {
+  chunkId: "l4_claude_cli",
+  docId: "doc_l4",
+  sourceDocumentId: "src_l4",
+  sourceType: "markdown",
+  sourcePath: "/corpus/l4.md",
+  pageStart: 1,
+  pageEnd: 1,
+  charStart: 0,
+  charEnd: 86,
+  tokenStart: 0,
+  tokenEnd: 12,
+  chunkIndex: 0,
+  chunkText: "Jede beantwortete Anfrage muss eine Audit-Zeile mit Zitationsnachweis schreiben.",
+  chunkSha256: "sha_l4",
+  corpusSnapshotId: "snap_l4",
+  corpusSnapshotHash: "hash_l4",
+  extractionWarnings: [],
+  ocrUsed: false,
+  retrievalScore: 1,
+  retrievalMethod: "rrf",
+};

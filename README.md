@@ -66,7 +66,7 @@ after-the-fact logging.
 
 ## Implementation Status
 
-- Anthropic LLM provider: wired for L4 through `tests/integration-live/anthropic.spec.ts`; deferred unless `RUN_LIVE_TESTS=1` and `ANTHROPIC_API_KEY` are present.
+- Claude CLI OAuth LLM provider: wired for local L4 through `tests/integration-live/anthropic.spec.ts`; `RUN_LIVE_TESTS=1` calls `claude -p --output-format json --json-schema` through the installed Claude Code OAuth session. The Anthropic SDK adapter remains available for deployable API-key environments, but it is not required for local GoalMode evidence.
 - bge-m3 embedding model: wired for L4 through `tests/integration-live/bge-m3.spec.ts`; deferred unless `RUN_LIVE_TESTS=1` and `BGE_M3_EMBEDDING_ENDPOINT` points at a live endpoint.
 - pgvector vector store: wired for L4 through `tests/integration-live/pgvector.spec.ts`; deferred unless `RUN_LIVE_TESTS=1` and `DATABASE_URL` points at Postgres with pgvector available.
 - Typst PDF renderer: wired for L4 through `tests/integration-live/typst.spec.ts`; deferred unless `RUN_LIVE_TESTS=1` and the `typst` binary is on `PATH`.

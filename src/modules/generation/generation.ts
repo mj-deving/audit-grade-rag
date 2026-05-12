@@ -1,3 +1,5 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
 import Anthropic from "@anthropic-ai/sdk";
 import type {
   AnswerOutcome,
@@ -12,6 +14,8 @@ import type {
 import { sha256Hex, stableId } from "../../lib/hash.js";
 import { defaultEmbeddingDimension, defaultEmbeddingModel } from "../ingest/embedding.js";
 import type { RetrievalTrace } from "../retrieval/retrieval.js";
+
+const execFileAsync = promisify(execFile);
 
 export type LlmRequest = {
   readonly prompt: string;
@@ -117,6 +121,56 @@ export class AnthropicMessagesProvider implements LlmProvider {
   }
 }
 
+export class ClaudeCliJsonProvider implements LlmProvider {
+  readonly profile: ProviderProfile;
+  private readonly command: string;
+  private readonly timeoutMs: number;
+  private readonly maxBudgetUsd: string;
+
+  constructor(
+    options: {
+      readonly command?: string;
+      readonly model?: string;
+      readonly timeoutMs?: number;
+      readonly maxBudgetUsd?: string;
+    } = {},
+  ) {
+    const model = options.model ?? "claude-sonnet-4-6";
+    this.command = options.command ?? "claude";
+    this.timeoutMs = options.timeoutMs ?? 120_000;
+    this.maxBudgetUsd = options.maxBudgetUsd ?? "1.00";
+    this.profile = {
+      id: "claude-cli-oauth",
+      name: "Claude Code CLI OAuth",
+      modelVersion: model,
+      replayCapability: "drift_detect_only",
+      supportsSeed: false,
+      configHash: sha256Hex(`claude-cli-oauth:${model}`),
+    };
+  }
+
+  async generate(request: LlmRequest): Promise<string> {
+    const result = await execFileAsync(
+      this.command,
+      [
+        "-p",
+        "--output-format",
+        "json",
+        "--json-schema",
+        JSON.stringify(claudeCliAnswerSchema),
+        "--model",
+        this.profile.modelVersion,
+        "--max-budget-usd",
+        this.maxBudgetUsd,
+        "--no-session-persistence",
+        claudeCliPrompt(request),
+      ],
+      { encoding: "utf8", timeout: this.timeoutMs },
+    );
+    return readClaudeCliAnswer(result.stdout);
+  }
+}
+
 export type GenerateOptions = {
   readonly query: string;
   readonly trace: RetrievalTrace;
@@ -139,6 +193,28 @@ export function generateAnswer(options: GenerateOptions): AnswerOutcome {
     return first;
   }
   const second = runGenerationAttempt(
+    options,
+    promptTemplate,
+    embeddingProfile,
+    first.validationErrors,
+  );
+  if (second.validationErrors.length === 0) {
+    return second;
+  }
+  return blockedOutcome(options, promptTemplate, embeddingProfile, second.validationErrors);
+}
+
+export async function generateAnswerAsync(options: GenerateOptions): Promise<AnswerOutcome> {
+  const promptTemplate = options.promptTemplate ?? defaultPromptTemplate;
+  const embeddingProfile = options.embeddingProfile ?? defaultEmbeddingProfile;
+  if (options.trace.outOfCorpus) {
+    return refusedOutcome(options, promptTemplate, embeddingProfile);
+  }
+  const first = await runGenerationAttemptAsync(options, promptTemplate, embeddingProfile);
+  if (first.validationErrors.length === 0) {
+    return first;
+  }
+  const second = await runGenerationAttemptAsync(
     options,
     promptTemplate,
     embeddingProfile,
@@ -195,6 +271,44 @@ function runGenerationAttempt(
   if (typeof answer !== "string") {
     throw new Error("Async LLM provider requires generateAnswerAsync");
   }
+  const claims = parseCitedClaims(answer);
+  const errors = validateClaims(claims, options.trace.finalChunks, options.corpusSnapshotId);
+  return {
+    outcome: "answered",
+    answer,
+    claims,
+    retrievedChunks: options.trace.finalChunks,
+    validationErrors: errors,
+    modelVersion: options.provider.profile.modelVersion,
+    promptVersion: promptTemplate.version,
+    embeddingModelVersion: embeddingProfile.modelVersion,
+    seed,
+    seedUnsupported: !options.provider.profile.supportsSeed,
+    corpusSnapshotId: options.corpusSnapshotId,
+    corpusSnapshotHash: options.corpusSnapshotHash,
+    providerProfileId: options.provider.profile.id,
+    promptHash: promptTemplate.sha256,
+    answerHash: sha256Hex(answer),
+    operatorMessageDe: "Die Antwort wurde mit belegten Aussagen erstellt.",
+  };
+}
+
+async function runGenerationAttemptAsync(
+  options: GenerateOptions,
+  promptTemplate: PromptTemplate,
+  embeddingProfile: EmbeddingProfile,
+  validationFeedback?: readonly ValidationError[],
+): Promise<AnswerOutcome> {
+  const seed = options.provider.profile.supportsSeed ? (options.seed ?? 42) : null;
+  const prompt = renderPrompt(options.query, options.trace.finalChunks, promptTemplate);
+  const answer = await options.provider.generate({
+    prompt,
+    modelVersion: options.provider.profile.modelVersion,
+    promptVersion: promptTemplate.version,
+    temperature: 0,
+    seed,
+    ...(validationFeedback === undefined ? {} : { validationFeedback }),
+  });
   const claims = parseCitedClaims(answer);
   const errors = validateClaims(claims, options.trace.finalChunks, options.corpusSnapshotId);
   return {
@@ -281,6 +395,66 @@ function parseClaimLine(line: string, index: number): Claim {
       .trim(),
     citations,
   };
+}
+
+const claudeCliAnswerSchema = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    answer: { type: "string", minLength: 1 },
+  },
+  required: ["answer"],
+} as const;
+
+function claudeCliPrompt(request: LlmRequest): string {
+  return [
+    "Return structured output that matches the supplied JSON schema.",
+    "Put the complete operator-facing answer in the `answer` field.",
+    "Preserve every required [chunk:<chunk_id>] citation marker exactly.",
+    `Frozen model_version: ${request.modelVersion}`,
+    `Frozen prompt_version: ${request.promptVersion}`,
+    `Temperature: ${String(request.temperature)}`,
+    `Seed: ${request.seed === null ? "unsupported-by-provider" : String(request.seed)}`,
+    validationFeedbackText(request.validationFeedback),
+    request.prompt,
+  ]
+    .filter((part) => part.length > 0)
+    .join("\n\n");
+}
+
+function validationFeedbackText(feedback: readonly ValidationError[] | undefined): string {
+  if (feedback === undefined || feedback.length === 0) {
+    return "";
+  }
+  return `Validation feedback to fix before answering: ${JSON.stringify(feedback)}`;
+}
+
+function readClaudeCliAnswer(stdout: string): string {
+  const parsed: unknown = JSON.parse(stdout);
+  if (!isClaudeCliEnvelope(parsed)) {
+    throw new Error("Claude CLI JSON envelope was not an object");
+  }
+  const structured = parsed.structured_output;
+  if (!isClaudeCliStructuredOutput(structured)) {
+    throw new Error("Claude CLI JSON envelope did not include structured_output");
+  }
+  const answer = structured.answer;
+  if (typeof answer !== "string" || answer.length === 0) {
+    throw new Error("Claude CLI structured_output.answer was not a non-empty string");
+  }
+  return answer;
+}
+
+function isClaudeCliEnvelope(value: unknown): value is { readonly structured_output: unknown } {
+  return isObject(value) && "structured_output" in value;
+}
+
+function isClaudeCliStructuredOutput(value: unknown): value is { readonly answer: unknown } {
+  return isObject(value) && "answer" in value;
+}
+
+function isObject(value: unknown): value is object {
+  return typeof value === "object" && value !== null;
 }
 
 function validateClaim(

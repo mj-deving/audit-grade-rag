@@ -1920,16 +1920,16 @@ A self-hostable Hono SSR application at `audit-grade-rag.example.local` where a 
   - Failure path: the UI distinguishes user-correctable input errors from system faults, drift, refusal, blocked generation, and unavailable dependencies.
 
 ## §7.5 Live-Provider Integration Tests
-### §7.5.1 Anthropic LLM Provider Live Integration
+### §7.5.1 Claude CLI OAuth LLM Provider Live Integration
 - Declared provider category: LLM provider.
-- Declared provider keyword: Anthropic.
+- Declared provider keyword: Claude CLI OAuth for local GoalMode evidence; Anthropic SDK/API for deployable API-key environments.
 - Served ISC-N: ISC-16, ISC-17, ISC-18, ISC-19, ISC-20, ISC-27, ISC-28, ISC-29, ISC-44, ISC-47, ISC-48, ISC-49.
 - L4 test file: `tests/integration-live/anthropic.spec.ts`.
 - Execution contract: `pnpm test:integration:live` invokes this test through the `integration-live` Vitest project, and `pnpm check:full` chains that script after L2 integration.
-- Environment contract: when `RUN_LIVE_TESTS=1`, `ANTHROPIC_API_KEY` must be set and the test performs an HTTPS call to the Anthropic Messages API using `claude-sonnet-4-6` unless `ANTHROPIC_MODEL` overrides it.
-- Fail-loud rule: if `RUN_LIVE_TESTS=1` and the key is absent, the model is unavailable, or the endpoint returns a non-2xx response, the test fails with the provider name and missing setting in the error text.
+- Environment contract: when `RUN_LIVE_TESTS=1`, the installed `claude` command must use the local Claude Code OAuth session and the test must call `claude -p --output-format json --json-schema` using `claude-sonnet-4-6` unless `CLAUDE_MODEL` overrides it.
+- Fail-loud rule: if `RUN_LIVE_TESTS=1` and the CLI is absent, OAuth is unavailable, the model is unavailable, or the structured JSON envelope lacks `structured_output`, the test fails with the provider name and failed stage in the error text.
 - Non-live contract: when `RUN_LIVE_TESTS` is not `1`, the test records a structured disabled-gate assertion; it does not pretend a live call occurred.
-- Product obligation: no deterministic development profile may be used as evidence for this L4 row.
+- Product obligation: no deterministic development profile may be used as evidence for this L4 row. The Anthropic SDK/API adapter remains a deployable-provider path and is not required merely to prove local `/goal` live behavior.
 
 ### §7.5.2 bge-m3 Embedding Model Live Integration
 - Declared provider category: Embedding model.
@@ -1993,13 +1993,13 @@ A self-hostable Hono SSR application at `audit-grade-rag.example.local` where a 
 | ISC-1..6 | integration | Test-driven Hono routes against ephemeral SQLite | All ISC-1..6 pass | Vitest + supertest + sqlite-tmp |
 | ISC-7..11 | integration | Run ingestion against a fixture corpus, assert chunk count + embedding count + index reachability | Counts match fixture expectations | Vitest + pg-tmp + tesseract fixture |
 | ISC-12..15 | integration | Pinned-corpus retrieval; assert top-K identity for known queries; assert OutOfCorpus on adversarial query | Match golden expected_chunks | Vitest + pinned corpus snapshot |
-| ISC-16..20 | integration + unit + L4 | Unit-test the citation-validator on crafted provider outputs; integration-test full generate→validate→regenerate path; L4 calls Anthropic Claude Sonnet 4.6 through the live Messages API when `RUN_LIVE_TESTS=1` | Validator rejects all uncited crafted cases; live call returns a cited-answer-capable response payload | Vitest + Anthropic Messages API live call |
+| ISC-16..20 | integration + unit + L4 | Unit-test the citation-validator on crafted provider outputs; integration-test full generate→validate→regenerate path; local L4 calls Claude Code CLI OAuth with `--output-format json --json-schema` when `RUN_LIVE_TESTS=1`; deployable API-key adapters stay explicit and configurable | Validator rejects all uncited crafted cases; live call returns a cited-answer-capable response payload | Vitest + Claude CLI structured-output live call |
 | ISC-21..26 | integration + unit | Hash-chain unit tests on synthetic rows; integration tests writing real rows; tamper test that flips one byte | `audit-verify` exits 0 clean, non-zero tampered | Vitest + ts-node + sqlite-tmp |
-| ISC-27..29 | integration + L4 | Replay a freshly-written ledger row; replay against drifted (manually-edited) prompt version → expect ReplayDriftError; L4 verifies replay metadata against the configured Anthropic model profile when `RUN_LIVE_TESTS=1` | Byte-equal on clean replay; named drift on dirty; live profile metadata is explicit and ledgerable | Vitest + SQLite + Anthropic live profile check |
+| ISC-27..29 | integration + L4 | Replay a freshly-written ledger row; replay against drifted (manually-edited) prompt version → expect ReplayDriftError; L4 verifies replay metadata against the configured Claude CLI OAuth or deployable LLM provider profile when `RUN_LIVE_TESTS=1` | Byte-equal on clean replay; named drift on dirty; live profile metadata is explicit and ledgerable | Vitest + SQLite + provider-profile live check |
 | ISC-30..34 | unit + integration | Eval harness self-tests on a 5-question fixture; thresholds enforced; empty-set rejected | Thresholds met, empty rejected | Vitest |
 | ISC-35..38 | integration | Generate report; re-generate; diff bytes; out-of-window ledger row test | Byte-identical re-runs; window honored | Vitest + Typst CLI + sha256sum |
 | ISC-39..43 | e2e | `agent-browser`-driven flow: login → query → see citations → replay → generate report → CSP scan | Full flow green; CSP report shows zero violations | agent-browser + custom e2e harness |
-| ISC-44..47 | unit + integration + L4 | Logger redaction unit tests; deletion-tombstone integration test; egress-allowlist test against the configured Anthropic endpoint contract when `RUN_LIVE_TESTS=1` | No PII in INFO logs; tombstone preserves chain; only configured LLM-host egress | Vitest + live HTTPS egress probe |
+| ISC-44..47 | unit + integration + L4 | Logger redaction unit tests; deletion-tombstone integration test; egress-allowlist test against the configured LLM provider endpoint contract when `RUN_LIVE_TESTS=1` | No PII in INFO logs; tombstone preserves chain; only configured LLM-host egress | Vitest + live provider egress probe |
 | ISC-48..51 | meta / CI | `pnpm check:full` on a clean clone; CI workflow run on PR; install-instructions test on a clean container | Exit 0 on all | GitHub Actions + Docker |
 
 ### §8.2 Test Pyramid Rules
@@ -2623,6 +2623,7 @@ A self-hostable Hono SSR application at `audit-grade-rag.example.local` where a 
 - 2026-05-11T21:14:34+02:00 — UI provider decision: v1 uses the chosen Hono SSR-string UI stack allowed by the run prompt; ISA/PRD §7.5 and README now point to `tests/integration-live/hono-ssr.spec.ts` instead of the stale Next.js declaration.
 - 2026-05-11T21:22:00+02:00 — ISC-1 closed: commit `4e761a7f792f` binds first login to a signed passkey registration challenge; evidence `src/modules/auth/auth.ts`, `src/app/http-app.ts`, and `runs magic-link bootstrap, passkey registration, and passkey-only login over HTTP`.
 - 2026-05-11T21:22:00+02:00 — ISC-2 closed: commit `4e761a7f792f` requires signed passkey authentication for subsequent login while magic-link recovery remains rate-limited; evidence `src/modules/auth/auth.ts` and `tests/integration-live/webauthn.spec.ts`.
+- 2026-05-12T09:06:22+02:00 — Provider policy correction: local LLM L4 evidence now uses Claude Code CLI OAuth with `--output-format json --json-schema`; evidence `tests/integration-live/anthropic.spec.ts`, `src/modules/generation/generation.ts`, `README.md`, and `RUN_LIVE_TESTS=1 pnpm exec vitest run --project integration-live tests/integration-live/anthropic.spec.ts`.
 
 ## Appendix A. ISA Decisions Lift
 - **2026-05-10 — Initial scaffold.** Project seeded from the GoalMode skill use-case and the Audit-Grade RAG recommendation in the Bootoshi-blueprint scoping conversation. ISA seeded at E5 because the project will be driven end-to-end by Codex `/goal` mode per `~/.claude/skills/GoalMode/Workflows/MasterPRD.md`, and the GoalMode workflow expects a ≥1500-line Master PRD downstream of an ISA dense enough to make expansion mechanical rather than design-from-scratch.
