@@ -3,6 +3,13 @@ import { join } from "node:path";
 import type { AnswerOutcome, CorpusChunk } from "../../domain/types.js";
 import { canonicalJson } from "../../lib/canonical-json.js";
 import { sha256Hex, stableId } from "../../lib/hash.js";
+import {
+  defaultEmbeddingProfile,
+  defaultPromptTemplate,
+  generateAnswer,
+  type LlmProvider,
+  type LlmRequest,
+} from "../generation/generation.js";
 import { defaultEmbeddingModel } from "../ingest/embedding.js";
 import { retrieveChunks } from "../retrieval/retrieval.js";
 
@@ -49,11 +56,13 @@ export const evalThresholds = {
   refusalCorrectness: 0.9,
 } as const;
 export const pinnedEvalTuple: PinnedEvalTuple = {
-  modelVersion: "stub-llm@1.0.0",
-  promptVersion: "eval-prompt@1.0.0",
+  modelVersion: "eval-cited-provider@1.0.0",
+  promptVersion: defaultPromptTemplate.version,
   embeddingModelVersion: defaultEmbeddingModel,
   corpusSnapshotId: "corpus-fixtures:v1",
 };
+
+const fixtureCorpusSnapshotHash = sha256Hex(pinnedEvalTuple.corpusSnapshotId);
 
 export async function loadGoldenSet(path: string): Promise<readonly GoldenCase[]> {
   return parseGoldenSet(await readFile(path, "utf8"));
@@ -235,12 +244,21 @@ function runGoldenCase(
   const trace = retrieveChunks(goldenCase.question, chunks, {
     activeSnapshotId: tuple.corpusSnapshotId,
   });
-  if (goldenCase.expected_outcome === "refused-out-of-corpus") {
-    return fixtureOutcome("refused-out-of-corpus", [], tuple);
-  }
-  const retrieved = new Set(trace.finalChunks.map((chunk) => chunk.chunkId));
-  const cited = (goldenCase.expected_chunks ?? []).filter((chunkId) => retrieved.has(chunkId));
-  return fixtureOutcome("answered", cited, tuple);
+  return generateAnswer({
+    query: goldenCase.question,
+    trace,
+    corpusSnapshotId: tuple.corpusSnapshotId,
+    corpusSnapshotHash: fixtureCorpusSnapshotHash,
+    provider: new EvalCitedProvider(tuple.modelVersion),
+    promptTemplate: {
+      ...defaultPromptTemplate,
+      version: tuple.promptVersion,
+    },
+    embeddingProfile: {
+      ...defaultEmbeddingProfile,
+      modelVersion: tuple.embeddingModelVersion,
+    },
+  });
 }
 
 function scoreGroundedness(goldenCase: GoldenCase, outcome: AnswerOutcome | undefined): number {
@@ -340,6 +358,31 @@ function fixtureOutcome(
     operatorMessageDe: outcome === "answered" ? "Antwort erstellt." : "Keine Evidenz gefunden.",
   };
   return outcome === "answered" ? { ...base, answer: "Antwort [chunk:chunk_a]" } : base;
+}
+
+class EvalCitedProvider implements LlmProvider {
+  readonly profile;
+
+  constructor(modelVersion: string) {
+    this.profile = {
+      id: "eval-cited-provider",
+      name: "Eval Cited Provider",
+      modelVersion,
+      replayCapability: "bit_equal" as const,
+      supportsSeed: true,
+      configHash: sha256Hex(modelVersion),
+    };
+  }
+
+  generate(request: LlmRequest): string {
+    const chunkIds = [...request.prompt.matchAll(/\[chunk:([A-Za-z0-9_-]+)\]/gu)]
+      .map((match) => match[1])
+      .filter((chunkId): chunkId is string => chunkId !== undefined);
+    const citations = [...new Set(chunkIds)].map((chunkId) => `[chunk:${chunkId}]`).join(" ");
+    return citations.length === 0
+      ? "CLAIM: Keine ausreichende Evidenz."
+      : `CLAIM: Die Antwort ist durch die abgerufene Evidenz belegt. ${citations}`;
+  }
 }
 
 function stringArray(value: unknown): readonly string[] {
