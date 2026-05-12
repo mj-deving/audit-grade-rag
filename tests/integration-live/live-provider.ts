@@ -1,7 +1,7 @@
 const liveProviderFlag = "RUN_LIVE_TESTS";
 
 export type LiveProviderCategory =
-  | "anthropic"
+  | "claude-cli"
   | "bge-m3"
   | "pgvector"
   | "typst"

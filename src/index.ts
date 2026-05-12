@@ -27,12 +27,15 @@ export {
   runGoldenEvaluation,
 } from "./modules/eval/eval.js";
 export {
+  AnthropicMessagesProvider,
+  ClaudeCliJsonProvider,
   DeterministicStubProvider,
   defaultEmbeddingProfile,
   defaultPromptTemplate,
   defaultProviderProfile,
   EvidenceEchoProvider,
   generateAnswer,
+  generateAnswerAsync,
   parseCitedClaims,
   renderPrompt,
   validateClaims,
