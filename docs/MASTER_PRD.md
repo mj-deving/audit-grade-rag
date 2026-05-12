@@ -1937,8 +1937,8 @@ A self-hostable Hono SSR application at `audit-grade-rag.example.local` where a 
 - Served ISC-N: ISC-7, ISC-8, ISC-11, ISC-12, ISC-13, ISC-14, ISC-15, ISC-31, ISC-48, ISC-49.
 - L4 test file: `tests/integration-live/bge-m3.spec.ts`.
 - Execution contract: `pnpm test:integration:live` invokes this test through the `integration-live` Vitest project, and `pnpm check:full` chains that script after L2 integration.
-- Environment contract: when `RUN_LIVE_TESTS=1`, `BGE_M3_EMBEDDING_ENDPOINT` must point at an OpenAI-compatible embedding endpoint serving model `bge-m3`; `BGE_M3_API_KEY` is optional for deployments that require bearer auth.
-- Fail-loud rule: if `RUN_LIVE_TESTS=1` and the endpoint is absent, unreachable, returns non-2xx, or returns no numeric vector, the test fails with the provider name and missing setting in the error text.
+- Environment contract: when `RUN_LIVE_TESTS=1`, `BGE_M3_EMBEDDING_ENDPOINT` may point at an OpenAI-compatible embedding endpoint serving model `bge-m3`; if it is absent, the live test self-provisions a local TEI `BAAI/bge-m3` container and persists the cold model cache under ignored `.live-cache/bge-m3`. `BGE_M3_API_KEY` is optional for deployments that require bearer auth.
+- Fail-loud rule: if `RUN_LIVE_TESTS=1` and the configured or self-provisioned endpoint is unreachable, returns non-2xx, returns no numeric vector, or cannot finish TEI startup within the declared timeout, the test fails with the provider name and last endpoint/container error.
 - Non-live contract: when `RUN_LIVE_TESTS` is not `1`, the test records a structured disabled-gate assertion; it does not pretend a live model invocation occurred.
 - Product obligation: deterministic local vectors remain a development profile only and cannot satisfy this L4 row.
 
