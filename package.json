@@ -18,6 +18,7 @@
     "format": "biome format --write .",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
+    "test:integration:live": "vitest run --project integration-live",
     "test:e2e": "pnpm build && node e2e/smoketest.mjs",
     "eval": "tsx src/eval/baseline.ts",
     "ingest": "tsx src/commands/ingest.ts",
@@ -27,7 +28,7 @@
     "report": "tsx src/commands/report.ts",
     "knip": "knip --no-progress",
     "check:fast": "pnpm typecheck && pnpm lint && pnpm test:unit && pnpm knip",
-    "check:full": "pnpm check:fast && pnpm test:integration && pnpm test:e2e && pnpm eval",
+    "check:full": "pnpm check:fast && pnpm test:integration && pnpm test:integration:live && pnpm test:e2e && pnpm eval",
     "dev": "tsx src/commands/dev-server.ts",
     "hooks:install": "lefthook install"
   },
@@ -42,6 +43,7 @@
     ],
     "project": [
       "src/**/*.ts",
+      "tests/**/*.ts",
       "e2e/**/*.mjs",
       "*.config.*"
     ],
@@ -68,6 +70,7 @@
     "vitest": "^4.1.5"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.95.2",
     "better-sqlite3": "^12.9.0",
     "hono": "^4.12.18",
     "pg": "^8.20.0"

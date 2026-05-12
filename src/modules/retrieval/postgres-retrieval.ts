@@ -1,6 +1,10 @@
 import type { Pool } from "pg";
 import type { CorpusChunk, RetrievedChunk } from "../../domain/types.js";
-import { defaultEmbeddingDimension, embedText, pgVectorLiteral } from "../ingest/embedding.js";
+import {
+  type EmbeddingProvider,
+  pgVectorLiteral,
+  requireConfiguredEmbeddingProvider,
+} from "../ingest/embedding.js";
 import {
   parseTopK,
   type RetrievalOptions,
@@ -37,10 +41,11 @@ export async function retrievePostgresChunks(
   pool: Pool,
   query: string,
   options: RetrievalOptions,
+  embeddingProvider: EmbeddingProvider = requireConfiguredEmbeddingProvider(),
 ): Promise<RetrievalTrace> {
   const topK = parseTopK(options.topK);
   const [vectorCandidates, bm25Candidates] = await Promise.all([
-    denseCandidates(pool, query, options.activeSnapshotId),
+    denseCandidates(pool, query, options.activeSnapshotId, embeddingProvider),
     bm25CandidatesFor(pool, query, options.activeSnapshotId),
   ]);
   const mergedCandidates = reciprocalRankFusion(vectorCandidates, bm25Candidates);
@@ -63,8 +68,9 @@ async function denseCandidates(
   pool: Pool,
   query: string,
   snapshotId: string,
+  embeddingProvider: EmbeddingProvider,
 ): Promise<readonly RetrievedChunk[]> {
-  const queryVector = pgVectorLiteral(embedText(query, defaultEmbeddingDimension));
+  const queryVector = pgVectorLiteral(await embeddingProvider.embed(query));
   const { rows } = await pool.query<RetrievedChunkRow>(
     `${baseChunkSelect("(1 - (embedding <=> $2::vector))")}
      WHERE corpus_snapshot_id = $1
