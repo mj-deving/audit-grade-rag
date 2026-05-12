@@ -67,8 +67,8 @@ after-the-fact logging.
 ## Implementation Status
 
 - Claude CLI OAuth LLM provider: wired for local L4 through `tests/integration-live/anthropic.spec.ts`; `RUN_LIVE_TESTS=1` calls `claude -p --output-format json --json-schema` through the installed Claude Code OAuth session. The Anthropic SDK adapter remains available for deployable API-key environments, but it is not required for local GoalMode evidence.
-- bge-m3 embedding model: wired for L4 through `tests/integration-live/bge-m3.spec.ts`; deferred unless `RUN_LIVE_TESTS=1` and `BGE_M3_EMBEDDING_ENDPOINT` points at a live endpoint.
-- pgvector vector store: wired for L4 through `tests/integration-live/pgvector.spec.ts`; deferred unless `RUN_LIVE_TESTS=1` and `DATABASE_URL` points at Postgres with pgvector available.
+- bge-m3 embedding model: wired for L4 through `tests/integration-live/bge-m3.spec.ts`; with `RUN_LIVE_TESTS=1`, it uses `BGE_M3_EMBEDDING_ENDPOINT` when set, otherwise starts a local TEI `BAAI/bge-m3` container and caches model artifacts under ignored `.live-cache/bge-m3`. A cold cache downloads the 2.2 GB ONNX data shard and should be run only when WSL memory/disk budget is acceptable; a VPS-hosted TEI endpoint behind SSH tunneling is the preferred low-WSL-resource path when available.
+- pgvector vector store: wired for L4 through `tests/integration-live/pgvector.spec.ts`; with `RUN_LIVE_TESTS=1`, it uses `DATABASE_URL` when set, otherwise starts an isolated local `pgvector/pgvector:pg16` container.
 - Typst PDF renderer: wired for L4 through `tests/integration-live/typst.spec.ts`; deferred unless `RUN_LIVE_TESTS=1` and the `typst` binary is on `PATH`.
 - WebAuthn auth library: wired for L4 through `tests/integration-live/webauthn.spec.ts`; application passkey storage is reopened until the HTTP flow verifies real WebAuthn assertions instead of credential-ID presence.
 - Hono SSR UI framework: wired for L4 through `tests/integration-live/hono-ssr.spec.ts`; `RUN_LIVE_TESTS=1` instantiates the real Hono app and renders `/console` with CSP evidence.

@@ -24,17 +24,6 @@ export function disabledLiveProvider(category: LiveProviderCategory): {
   };
 }
 
-export function requiredEnv(name: string, category: LiveProviderCategory): string {
-  const value = process.env[name];
-  if (value === undefined || value.length === 0) {
-    throw new Error(
-      `L4 live-provider test for ${category} requires ${name} when ${liveProviderFlag}=1`,
-    );
-  }
-
-  return value;
-}
-
 export function optionalEnv(name: string): string | undefined {
   const value = process.env[name];
   return value === "" ? undefined : value;
