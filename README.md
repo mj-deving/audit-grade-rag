@@ -37,7 +37,7 @@ try the product surface.
 </p>
 
 <p align="center">
-  <a href="docs/assets/console-tour.mp4">90-second console tour</a>
+  <a href="docs/assets/console-tour.mp4">10-second console tour</a>
 </p>
 
 ## Why This Exists
