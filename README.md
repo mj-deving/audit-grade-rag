@@ -33,7 +33,7 @@ try the product surface.
 </p>
 
 <p align="center">
-  <img src="docs/assets/console-mobile.png" alt="Audit-Grade RAG mobile operator console" width="260">
+  <img src="docs/assets/console-tour.gif" alt="Short Audit-Grade RAG console tour" width="900">
 </p>
 
 <p align="center">
