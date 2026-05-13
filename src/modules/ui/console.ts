@@ -152,18 +152,20 @@ function renderRail(current: "console" | "reports"): string {
   return `
     <aside class="rail" aria-label="Navigation">
       <div class="brand">
-        <div class="brand-mark">AR</div>
-        <p class="brand-title">Audit-Grade RAG</p>
-        <p class="brand-subtitle">Operator-Konsole</p>
+        <div class="brand-mark" aria-hidden="true">AG</div>
+        <div>
+          <p class="brand-title">Audit-Grade RAG</p>
+          <p class="brand-subtitle">Compliance Workbench</p>
+        </div>
       </div>
       <nav class="rail-nav">
         <a href="/console" ${current === "console" ? 'aria-current="page"' : ""}>Konsole</a>
-        <a href="/console/reports" ${current === "reports" ? 'aria-current="page"' : ""}>Artikel 50</a>
+        <a href="/console/reports" ${current === "reports" ? 'aria-current="page"' : ""}>Art. 50</a>
         <a href="/auth/operator">Zugriff</a>
       </nav>
       <div class="rail-status">
-        <p class="rail-label">Betriebsmodus</p>
-        <strong>Lokaler Audit-Lauf</strong>
+        <p class="rail-label">Audit-Modus</p>
+        <strong>signiert · lokal · replayfaehig</strong>
       </div>
     </aside>
   `;
@@ -174,11 +176,11 @@ function renderTopbar(result: QueryResult): string {
     <header class="topbar">
       <div>
         <p class="eyebrow">Belegte Korpusantworten</p>
-        <h1>Audit-Arbeitsplatz</h1>
-        <p>Antworten, Evidenz und Audit-Status.</p>
+        <h1>Audit-Arbeitsplatz fuer regulierte RAG-Antworten</h1>
+        <p>Evidenz, Replay und Ledger im selben Arbeitsfluss.</p>
       </div>
       <div class="status-strip" aria-label="Laufzeitstatus">
-        ${metric("Korpusstand", shortHash(result.corpusSnapshotId))}
+        ${metric("Snapshot", shortHash(result.corpusSnapshotId))}
         ${metric("Anbieter", result.providerProfileId)}
         ${metric("Ergebnis", result.outcome)}
       </div>
@@ -192,9 +194,9 @@ function renderQueryPanel(result: QueryResult): string {
       <div class="section-head">
         <div>
           <h2 id="query-heading">Korpusfrage</h2>
-          <p class="section-note">Aktiver Korpusstand: ${escapeHtml(result.corpusSnapshotId)}</p>
+          <p class="section-note">Snapshot: ${shortHash(result.corpusSnapshotId)}</p>
         </div>
-        <span class="badge">Top-K 8</span>
+        <span class="badge">Top-K 8 · RRF</span>
       </div>
       <form class="query-grid">
         <div class="field">
@@ -240,7 +242,7 @@ function renderChunks(chunks: readonly RetrievedChunk[]): string {
     <details class="evidence-section" open>
       <summary id="chunks-heading">
         <span>${germanCopy.chunks}</span>
-        <span class="section-note">${String(chunks.length)} Treffer aus dem aktiven Korpusstand.</span>
+        <span class="section-note">${String(chunks.length)} Treffer</span>
       </summary>
       <div class="evidence-grid" aria-labelledby="chunks-heading">${chunks.map(renderChunkPreview).join("")}</div>
     </details>
@@ -273,9 +275,17 @@ function renderAudit(result: QueryResult): string {
         <h2 id="audit-heading">${germanCopy.audit}</h2>
         <span class="badge">signiert</span>
       </div>
+      <div class="audit-proof" aria-label="Audit-Nachweis">
+        <div>
+          <span>Sequenz</span>
+          <strong>${String(result.ledgerEntry.sequence)}</strong>
+        </div>
+        <div>
+          <span>Zeilenhash</span>
+          <strong>${shortHash(result.ledgerEntry.id)}</strong>
+        </div>
+      </div>
       <dl class="audit-list">
-        <dt>Sequenz</dt><dd>${String(result.ledgerEntry.sequence)}</dd>
-        <dt>Zeilenhash</dt><dd>${shortHash(result.ledgerEntry.id)}</dd>
         <dt>Vorheriger Hash</dt><dd>${shortHash(result.ledgerEntry.previousHash)}</dd>
         <dt>Schluessel</dt><dd>${escapeHtml(result.ledgerEntry.signatureKeyId)}</dd>
         <dt>Ergebnis</dt><dd>${escapeHtml(result.outcome)}</dd>
