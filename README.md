@@ -134,6 +134,8 @@ pnpm report \
 
 ## Architecture
 
+![Audit-Grade RAG data flow — query through retrieval, refusal gate, Claude generation, hash-chained signed ledger, and deterministic replay with five named drift states](docs/diagrams/dataflow.png)
+
 ```text
 src/app/              Runtime composition
 src/commands/         CLI and dev-server entrypoints
