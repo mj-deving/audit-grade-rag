@@ -32,14 +32,6 @@ try the product surface.
   <img src="docs/assets/console-desktop.png" alt="Audit-Grade RAG desktop operator console" width="900">
 </p>
 
-<p align="center">
-  <img src="docs/assets/console-tour.gif" alt="Short Audit-Grade RAG console tour" width="900">
-</p>
-
-<p align="center">
-  <a href="docs/assets/console-tour.mp4">10-second console tour</a>
-</p>
-
 ## Why This Exists
 
 Most RAG tools optimize for the answer box. Regulated operators need the
