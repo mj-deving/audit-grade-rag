@@ -31,10 +31,18 @@ export const germanCopy = {
   chunks: "Gefundene Korpusstellen",
   audit: "Audit-Spur",
   refusal: "Keine ausreichend relevante Evidenz im Korpus gefunden.",
+  refusalTitle: "Antwort verweigert",
+  refusalDetail:
+    "Das System antwortet nur mit belegter Evidenz aus dem freigegebenen Korpus. Fuer diese Frage liegt keine ausreichend relevante Quelle vor.",
   blocked: "Die generierte Antwort wurde wegen fehlender Zitate blockiert.",
+  blockedTitle: "Antwort blockiert",
+  providerError: "Anbieterfehler. Bitte spaeter erneut versuchen.",
+  providerErrorTitle: "Anbieterfehler",
+  answeredTitle: "Belegte Antwort",
   replayPassed: "Replay erfolgreich.",
   replayDrift: "Replay-Abweichung erkannt.",
   replayUnsupported: "Replay fuer dieses Anbieterprofil nicht unterstuetzt.",
+  replaySubmit: "Replay ausfuehren",
   report: "Artikel-50-Bericht erzeugen",
 } as const;
 
@@ -46,7 +54,13 @@ export function renderAuthOperator(): ConsoleView {
         <section class="auth-panel" aria-labelledby="auth-heading">
           <p class="eyebrow">Zugriff</p>
           <h1 id="auth-heading">${germanCopy.login}</h1>
-          <p>${germanCopy.aiDisclosure}</p>
+          <div class="status-callout answered" role="note">
+            <span class="status-icon" aria-hidden="true">i</span>
+            <div>
+              <p class="status-title">KI-Transparenzhinweis</p>
+              <p class="status-body">${germanCopy.aiDisclosure}</p>
+            </div>
+          </div>
           <form class="form-grid" action="/api/auth/magic-link/request" method="post">
             <div class="field">
               <label for="email">${germanCopy.email}</label>
@@ -54,6 +68,7 @@ export function renderAuthOperator(): ConsoleView {
             </div>
             <button type="submit">${germanCopy.passkey}</button>
           </form>
+          <p class="disclaimer">Zugang nur fuer autorisierte Operatoren. Alle Anfragen werden im signierten Audit-Ledger erfasst.</p>
         </section>
       </main>
     `,
@@ -196,18 +211,18 @@ function renderQueryPanel(result: QueryResult): string {
           <h2 id="query-heading">Korpusfrage</h2>
           <p class="section-note">Snapshot: ${shortHash(result.corpusSnapshotId)}</p>
         </div>
-        <span class="badge">Top-K 8 · RRF</span>
+        <span class="badge accent">Top-K 8 · RRF</span>
       </div>
-      <form class="query-grid">
+      <form class="query-grid" action="/console" method="get">
         <div class="field">
           <label for="query">${germanCopy.queryPlaceholder}</label>
-          <textarea id="query" name="query">beantwortete Anfrage Audit-Zeile</textarea>
+          <textarea id="query" name="q">${escapeHtml(result.ledgerEntry.queryText ?? "")}</textarea>
         </div>
         <div class="field">
           <label for="top-k">Top-K</label>
           <input id="top-k" name="top_k" type="number" min="1" max="20" value="8">
         </div>
-        <button type="button">Senden</button>
+        <button type="submit">Senden</button>
       </form>
     </section>
   `;
@@ -215,14 +230,20 @@ function renderQueryPanel(result: QueryResult): string {
 
 function renderAnswer(result: QueryResult): string {
   const chunksById = new Map(result.retrievedChunks.map((chunk) => [chunk.chunkId, chunk]));
-  return `<div class="answer-copy">${result.claims
+  const claims = result.claims
     .map(
       (claim) =>
         `<p>${escapeHtml(claim.text)} ${claim.citations
           .map((citation) => renderCitationLink(citation.chunkId, chunksById.get(citation.chunkId)))
           .join(" ")}</p>`,
     )
-    .join("")}</div>`;
+    .join("");
+  return `
+    <p class="answer-status">
+      <span class="answer-status-dot" aria-hidden="true"></span>${escapeHtml(germanCopy.answeredTitle)}
+    </p>
+    <div class="answer-copy">${claims}</div>
+  `;
 }
 
 function renderCitationLink(chunkId: string, chunk: RetrievedChunk | undefined): string {
@@ -293,14 +314,16 @@ function renderAudit(result: QueryResult): string {
         <dt>Modell</dt><dd>${escapeHtml(result.modelVersion)}</dd>
         <dt>Embedding</dt><dd>${escapeHtml(result.embeddingModelVersion)}</dd>
       </dl>
-      <form action="/api/audit/${escapeHtml(result.ledgerEntry.id)}/replay" method="post">
-        <button class="replay-button" type="submit">Replay</button>
+      <form class="replay-form" action="/api/audit/${escapeHtml(result.ledgerEntry.id)}/replay" method="post">
+        <button class="replay-button secondary" type="submit">${germanCopy.replaySubmit}</button>
       </form>
-      <div class="replay-result" role="status" aria-live="polite">
-        <span class="badge">pass</span>
-        <span class="badge warn">drift</span>
-        <span class="badge warn">error</span>
-        <pre class="diff">original == replay</pre>
+      <div class="replay-legend" aria-label="Moegliche Replay-Ergebnisse">
+        <p class="legend-title">Moegliche Replay-Ergebnisse</p>
+        <ul>
+          <li><span class="badge ok">pass</span> <span>Antwort deterministisch reproduziert.</span></li>
+          <li><span class="badge warn">drift</span> <span>Abweichung zur urspruenglichen Antwort.</span></li>
+          <li><span class="badge danger">error</span> <span>Replay konnte nicht ausgefuehrt werden.</span></li>
+        </ul>
       </div>
     </section>
   `;
@@ -308,17 +331,33 @@ function renderAudit(result: QueryResult): string {
 
 function stateMessage(outcome: QueryResult["outcome"]): string {
   if (outcome === "refused-out-of-corpus") {
-    return `<div class="answer-copy"><p>${germanCopy.refusal}</p></div>`;
+    return statusCallout("refused", "alert", germanCopy.refusalTitle, germanCopy.refusalDetail);
   }
   if (outcome === "blocked-uncited") {
-    return `<div class="answer-copy"><p>${germanCopy.blocked}</p></div>`;
+    return statusCallout("blocked", "alert", germanCopy.blockedTitle, germanCopy.blocked);
   }
-  return '<div class="answer-copy"><p>Anbieterfehler. Bitte spaeter erneut versuchen.</p></div>';
+  return statusCallout("error", "alert", germanCopy.providerErrorTitle, germanCopy.providerError);
+}
+
+function statusCallout(
+  variant: "refused" | "blocked" | "error",
+  role: "alert" | "status",
+  title: string,
+  body: string,
+): string {
+  const icon = variant === "blocked" ? "!" : "×";
+  return `<div class="status-callout ${variant}" role="${role}">
+      <span class="status-icon" aria-hidden="true">${icon}</span>
+      <div>
+        <p class="status-title">${escapeHtml(title)}</p>
+        <p class="status-body">${escapeHtml(body)}</p>
+      </div>
+    </div>`;
 }
 
 function statusBadge(outcome: QueryResult["outcome"]): string {
-  const className = outcome === "answered" ? "badge" : "badge warn";
-  return `<span class="${className}">${escapeHtml(outcome)}</span>`;
+  const variant = outcome === "answered" ? "ok" : outcome === "blocked-uncited" ? "warn" : "danger";
+  return `<span class="badge ${variant}">${escapeHtml(outcome)}</span>`;
 }
 
 function metric(label: string, value: string): string {
