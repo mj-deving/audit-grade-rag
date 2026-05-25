@@ -230,14 +230,20 @@ function renderQueryPanel(result: QueryResult): string {
 
 function renderAnswer(result: QueryResult): string {
   const chunksById = new Map(result.retrievedChunks.map((chunk) => [chunk.chunkId, chunk]));
-  return `<div class="answer-copy">${result.claims
+  const claims = result.claims
     .map(
       (claim) =>
         `<p>${escapeHtml(claim.text)} ${claim.citations
           .map((citation) => renderCitationLink(citation.chunkId, chunksById.get(citation.chunkId)))
           .join(" ")}</p>`,
     )
-    .join("")}</div>`;
+    .join("");
+  return `
+    <p class="answer-status">
+      <span class="answer-status-dot" aria-hidden="true"></span>${escapeHtml(germanCopy.answeredTitle)}
+    </p>
+    <div class="answer-copy">${claims}</div>
+  `;
 }
 
 function renderCitationLink(chunkId: string, chunk: RetrievedChunk | undefined): string {
@@ -330,12 +336,7 @@ function stateMessage(outcome: QueryResult["outcome"]): string {
   if (outcome === "blocked-uncited") {
     return statusCallout("blocked", "alert", germanCopy.blockedTitle, germanCopy.blocked);
   }
-  return statusCallout(
-    "error",
-    "alert",
-    germanCopy.providerErrorTitle,
-    germanCopy.providerError,
-  );
+  return statusCallout("error", "alert", germanCopy.providerErrorTitle, germanCopy.providerError);
 }
 
 function statusCallout(
@@ -355,12 +356,7 @@ function statusCallout(
 }
 
 function statusBadge(outcome: QueryResult["outcome"]): string {
-  const variant =
-    outcome === "answered"
-      ? "ok"
-      : outcome === "blocked-uncited"
-        ? "warn"
-        : "danger";
+  const variant = outcome === "answered" ? "ok" : outcome === "blocked-uncited" ? "warn" : "danger";
   return `<span class="badge ${variant}">${escapeHtml(outcome)}</span>`;
 }
 
