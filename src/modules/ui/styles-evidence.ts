@@ -34,11 +34,11 @@ export const evidenceConsoleCss = `
 .audit-proof strong {
   color: var(--column-ink);
   font-family: var(--font-display);
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   font-weight: 500;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.005em;
-  line-height: 1.15;
+  line-height: 1.2;
   overflow-wrap: anywhere;
 }
 
@@ -47,7 +47,7 @@ export const evidenceConsoleCss = `
 .source-list,
 .chunk-meta {
   display: grid;
-  grid-template-columns: minmax(110px, 0.4fr) minmax(0, 1fr);
+  grid-template-columns: max-content minmax(0, 1fr);
   gap: 0;
 }
 

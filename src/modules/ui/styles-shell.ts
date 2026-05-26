@@ -180,7 +180,7 @@ export const shellConsoleCss = `
 .topbar {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.55fr);
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.6fr);
   gap: var(--space-7);
   align-items: end;
   min-width: 0;
