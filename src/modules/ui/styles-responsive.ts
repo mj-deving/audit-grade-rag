@@ -17,26 +17,51 @@ export const responsiveConsoleCss = `
   .rail {
     position: static;
     min-height: auto;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
     align-items: center;
-    padding: var(--space-4);
+    gap: var(--space-5);
+    padding: var(--space-5);
+    border-right: 0;
+    border-bottom: var(--rule-w-strong) solid var(--ink);
+  }
+
+  .rail::before {
+    inset: auto 0 0 0;
+    width: auto;
+    height: 4px;
+    background: linear-gradient(90deg, var(--seal) 0 6%, transparent 6%);
   }
 
   .brand {
-    align-content: start;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-3);
+    align-items: center;
   }
 
   .rail-nav {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--space-2);
+    gap: 0;
+    border: 0;
+  }
+
+  .rail-nav a {
+    flex: 0 0 auto;
+    border-bottom: 0;
+    border-right: 1px solid var(--rule);
+    padding: 0 var(--space-4);
+    min-height: 40px;
+  }
+
+  .rail-nav a:last-child {
+    border-right: 0;
   }
 
   .rail-status {
-    padding-top: 0;
-    padding-left: var(--space-3);
-    border-top: 0;
-    border-left: 1px solid rgba(255, 255, 255, 0.14);
+    grid-column: 1 / -1;
+    padding-top: var(--space-3);
+    border-top: 1px solid var(--rule);
   }
 
   .workspace {
@@ -48,10 +73,6 @@ export const responsiveConsoleCss = `
   .query-grid,
   .form-grid {
     grid-template-columns: 1fr;
-  }
-
-  .status-strip {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .audit-panel {
@@ -75,14 +96,20 @@ export const responsiveConsoleCss = `
     gap: var(--space-4);
   }
 
+  .brand {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .brand-mark {
+    width: 52px;
+    height: 52px;
+    font-size: 1.25rem;
+  }
+
   .rail-nav {
     flex-wrap: nowrap;
     overflow-x: auto;
     padding-bottom: var(--space-1);
-  }
-
-  .rail-nav a {
-    flex: 0 0 auto;
   }
 
   .rail-status {
@@ -90,7 +117,7 @@ export const responsiveConsoleCss = `
   }
 
   .workspace {
-    padding: var(--space-3);
+    padding: var(--space-4);
   }
 
   .topbar,
@@ -101,25 +128,49 @@ export const responsiveConsoleCss = `
   .auth-panel,
   .report-panel,
   .source-panel {
-    padding: var(--space-4);
+    padding-left: 0;
+    padding-right: 0;
+  }
+
+  .audit-panel {
+    padding-left: var(--space-4);
+    padding-right: var(--space-4);
   }
 
   h1 {
     font-size: var(--text-xl);
   }
 
-  .audit-proof,
+  .audit-proof {
+    grid-template-columns: 1fr;
+  }
+
+  .audit-proof div {
+    border-right: 0;
+    border-bottom: 1px solid var(--column-rule);
+    padding: var(--space-3) 0;
+  }
+
+  .audit-proof div:last-child {
+    border-bottom: 0;
+    padding-left: 0;
+  }
+
   .evidence-grid {
     grid-template-columns: 1fr;
   }
 
   .status-strip {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--space-1);
+    grid-template-columns: 1fr;
   }
 
   .metric {
-    padding: var(--space-2);
+    border-right: 0;
+    border-bottom: 1px solid var(--rule-strong);
+  }
+
+  .metric:last-child {
+    border-bottom: 0;
   }
 
   .audit-list,
@@ -146,7 +197,11 @@ export const responsiveConsoleCss = `
   .auth-shell,
   .report-shell,
   .source-shell {
-    padding: var(--space-6) var(--space-3);
+    padding: var(--space-6) var(--space-4);
+  }
+
+  .answer-copy p:first-child::first-letter {
+    font-size: 2.4em;
   }
 }
 `;

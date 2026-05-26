@@ -170,7 +170,7 @@ function renderRail(current: "console" | "reports"): string {
         <div class="brand-mark" aria-hidden="true">AG</div>
         <div>
           <p class="brand-title">Audit-Grade RAG</p>
-          <p class="brand-subtitle">Compliance Workbench</p>
+          <p class="brand-subtitle">Compliance · Ledger</p>
         </div>
       </div>
       <nav class="rail-nav">
@@ -191,8 +191,8 @@ function renderTopbar(result: QueryResult): string {
     <header class="topbar">
       <div>
         <p class="eyebrow">Belegte Korpusantworten</p>
-        <h1>Audit-Arbeitsplatz fuer regulierte RAG-Antworten</h1>
-        <p>Evidenz, Replay und Ledger im selben Arbeitsfluss.</p>
+        <h1>Audit-Arbeitsplatz fuer <em>regulierte</em> RAG-Antworten.</h1>
+        <p>Evidenz, Replay und signiertes Ledger in einer Akte. Jede Antwort traegt ihre Quelle.</p>
       </div>
       <div class="status-strip" aria-label="Laufzeitstatus">
         ${metric("Snapshot", shortHash(result.corpusSnapshotId))}
