@@ -49,7 +49,6 @@ export const evidenceConsoleCss = `
   display: grid;
   grid-template-columns: minmax(110px, 0.4fr) minmax(0, 1fr);
   gap: 0;
-  align-items: start;
 }
 
 .audit-list dt,
