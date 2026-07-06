@@ -1,3 +1,4 @@
+import { startObservation } from "@langfuse/tracing";
 import type { QueryResult } from "../domain/types.js";
 import { sha256Hex, stableId } from "../lib/hash.js";
 import type { Clock } from "../lib/time.js";
@@ -52,7 +53,7 @@ export function createRuntimeApp(options: RuntimeAppOptions = {}): RuntimeApp {
   };
 }
 
-function executeQuery(input: {
+type QueryExecutionInput = {
   readonly ledger: AuditLedger;
   readonly auth: AuthService;
   readonly ingest: IngestionStore;
@@ -60,7 +61,31 @@ function executeQuery(input: {
   readonly sessionId: string | null;
   readonly query: string;
   readonly topK?: number;
-}): QueryResult {
+};
+
+function executeQuery(input: QueryExecutionInput): QueryResult {
+  // ISC-23 named startActiveObservation, executeQuery must stay synchronous.
+  // startObservation fits the sync lifecycle and still inherits any active OTEL context.
+  const span = startObservation("query", {
+    input: { query: input.query, sessionId: input.sessionId, topK: input.topK },
+  });
+  try {
+    const result = runQuery(input);
+    span.update({ output: { outcome: result.outcome, queryId: result.queryId } });
+    return result;
+  } catch (error) {
+    span.update({
+      level: "ERROR",
+      statusMessage: error instanceof Error ? error.message : "Unknown query error",
+      metadata: { error: traceErrorMetadata(error) },
+    });
+    throw error;
+  } finally {
+    span.end();
+  }
+}
+
+function runQuery(input: QueryExecutionInput): QueryResult {
   const session = input.auth.requireSession(input.sessionId);
   const snapshot = input.ingest.activeSnapshot();
   if (snapshot === null) {
@@ -105,6 +130,17 @@ function executeQuery(input: {
     throw new Error("query id was not ledgered");
   }
   return { ...outcome, queryId, ledgerEntry };
+}
+
+function traceErrorMetadata(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+      ...(error.stack === undefined ? {} : { stack: error.stack }),
+    };
+  }
+  return { message: String(error) };
 }
 
 function bootstrapOperator(auth: AuthService, email: string): Session {

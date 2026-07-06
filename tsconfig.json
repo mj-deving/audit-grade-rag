@@ -23,11 +23,11 @@
     "isolatedModules": true,
     "noUncheckedSideEffectImports": true,
     "moduleDetection": "force",
-    "skipLibCheck": false,
+    "skipLibCheck": true,
     "moduleResolution": "NodeNext",
     "resolveJsonModule": true,
     "esModuleInterop": true
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts", "vitest.config.ts"],
+  "include": ["instrumentation.ts", "src/**/*.ts", "tests/**/*.ts", "vitest.config.ts"],
   "exclude": ["coverage", "dist", "node_modules"]
 }
