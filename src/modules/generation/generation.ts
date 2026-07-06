@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import Anthropic from "@anthropic-ai/sdk";
-import { startObservation } from "@langfuse/tracing";
 import type {
   AnswerOutcome,
   Citation,
@@ -109,55 +108,19 @@ export class AnthropicMessagesProvider implements LlmProvider {
   }
 
   async generate(request: LlmRequest): Promise<string> {
-    const generation = startObservation(
-      "anthropic.messages",
-      {
-        model: this.profile.modelVersion,
-        input: [{ role: "user", content: request.prompt }],
-      },
-      { asType: "generation" },
-    );
-    try {
-      const message = await this.client.messages.create({
-        max_tokens: 512,
-        messages: [{ role: "user", content: request.prompt }],
-        model: this.profile.modelVersion,
-        temperature: request.temperature,
-      });
-      const text = message.content
-        .filter((block) => block.type === "text")
-        .map((block) => block.text)
-        .join("\n");
-      generation.update({
-        output: text,
-        usageDetails: {
-          input: message.usage.input_tokens,
-          output: message.usage.output_tokens,
-        },
-      });
-      return text;
-    } catch (error) {
-      generation.update({
-        level: "ERROR",
-        statusMessage: error instanceof Error ? error.message : "Unknown Anthropic error",
-        metadata: { error: traceErrorMetadata(error) },
-      });
-      throw error;
-    } finally {
-      generation.end();
-    }
+    // Traced automatically by the OpenInference AnthropicInstrumentation registered in
+    // instrumentation.ts (model, tokens, input/output, generation type). No manual span here.
+    const message = await this.client.messages.create({
+      max_tokens: 512,
+      messages: [{ role: "user", content: request.prompt }],
+      model: this.profile.modelVersion,
+      temperature: request.temperature,
+    });
+    return message.content
+      .filter((block) => block.type === "text")
+      .map((block) => block.text)
+      .join("\n");
   }
-}
-
-function traceErrorMetadata(error: unknown): Record<string, unknown> {
-  if (error instanceof Error) {
-    return {
-      name: error.name,
-      message: error.message,
-      ...(error.stack === undefined ? {} : { stack: error.stack }),
-    };
-  }
-  return { message: String(error) };
 }
 
 export class ClaudeCliJsonProvider implements LlmProvider {

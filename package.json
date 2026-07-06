@@ -78,6 +78,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.2",
+    "@arizeai/openinference-instrumentation-anthropic": "^0.1.15",
     "@langfuse/client": "^5.9.1",
     "@langfuse/otel": "^5.9.1",
     "@langfuse/tracing": "^5.9.1",
