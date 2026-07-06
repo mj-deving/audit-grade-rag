@@ -27,6 +27,8 @@
     "audit:replay": "tsx src/commands/audit-replay.ts",
     "report": "tsx src/commands/report.ts",
     "trace:probe": "tsx --env-file=.env src/eval/trace-probe.ts",
+    "dataset:seed": "tsx --env-file=.env src/eval/langfuse-dataset-seed.ts",
+    "eval:langfuse": "tsx --env-file=.env src/eval/langfuse-experiment.ts",
     "knip": "knip --no-progress",
     "check:fast": "pnpm typecheck && pnpm lint && pnpm test:unit && pnpm knip",
     "check:full": "pnpm check:fast && pnpm test:integration && pnpm test:integration:live && pnpm test:e2e && pnpm eval",
@@ -42,7 +44,9 @@
       "src/index.ts",
       "src/cli.ts",
       "instrumentation.ts",
-      "src/eval/trace-probe.ts"
+      "src/eval/trace-probe.ts",
+      "src/eval/langfuse-dataset-seed.ts",
+      "src/eval/langfuse-experiment.ts"
     ],
     "project": [
       "src/**/*.ts",

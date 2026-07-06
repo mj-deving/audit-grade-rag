@@ -185,7 +185,7 @@ function parseGoldenLine(line: string, lineNumber: number): GoldenCase {
     : { ...parsed, expected_chunks: stringArray(value.expected_chunks) };
 }
 
-async function loadFixtureCorpus(corpusDir: string): Promise<readonly CorpusChunk[]> {
+export async function loadFixtureCorpus(corpusDir: string): Promise<readonly CorpusChunk[]> {
   const files = (await readdir(corpusDir))
     .filter((file) => file.endsWith(".md"))
     .map((file) => join(corpusDir, file))
@@ -236,7 +236,7 @@ function fixtureChunk(
   };
 }
 
-function runGoldenCase(
+export function runGoldenCase(
   goldenCase: GoldenCase,
   chunks: readonly CorpusChunk[],
   tuple: PinnedEvalTuple,
@@ -261,7 +261,10 @@ function runGoldenCase(
   });
 }
 
-function scoreGroundedness(goldenCase: GoldenCase, outcome: AnswerOutcome | undefined): number {
+export function scoreGroundedness(
+  goldenCase: GoldenCase,
+  outcome: AnswerOutcome | undefined,
+): number {
   if (outcome === undefined) {
     return 0;
   }
@@ -274,7 +277,10 @@ function scoreGroundedness(goldenCase: GoldenCase, outcome: AnswerOutcome | unde
   return outcome.outcome === goldenCase.expected_outcome ? 1 : 0;
 }
 
-function scoreCitationAccuracy(goldenCase: GoldenCase, outcome: AnswerOutcome | undefined): number {
+export function scoreCitationAccuracy(
+  goldenCase: GoldenCase,
+  outcome: AnswerOutcome | undefined,
+): number {
   if (goldenCase.expected_outcome !== "answered") {
     return 1;
   }
@@ -285,7 +291,7 @@ function scoreCitationAccuracy(goldenCase: GoldenCase, outcome: AnswerOutcome | 
   return expected.every((chunkId) => cited.has(chunkId)) ? 1 : 0;
 }
 
-function scoreRefusal(goldenCase: GoldenCase, outcome: AnswerOutcome | undefined): number {
+export function scoreRefusal(goldenCase: GoldenCase, outcome: AnswerOutcome | undefined): number {
   if (goldenCase.expected_outcome !== "refused-out-of-corpus") {
     return 1;
   }
