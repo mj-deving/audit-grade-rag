@@ -26,6 +26,7 @@
     "audit:export": "tsx src/commands/audit-export.ts",
     "audit:replay": "tsx src/commands/audit-replay.ts",
     "report": "tsx src/commands/report.ts",
+    "trace:probe": "tsx --env-file=.env src/eval/trace-probe.ts",
     "knip": "knip --no-progress",
     "check:fast": "pnpm typecheck && pnpm lint && pnpm test:unit && pnpm knip",
     "check:full": "pnpm check:fast && pnpm test:integration && pnpm test:integration:live && pnpm test:e2e && pnpm eval",
@@ -39,17 +40,23 @@
   "knip": {
     "entry": [
       "src/index.ts",
-      "src/cli.ts"
+      "src/cli.ts",
+      "instrumentation.ts",
+      "src/eval/trace-probe.ts"
     ],
     "project": [
       "src/**/*.ts",
       "tests/**/*.ts",
       "e2e/**/*.mjs",
+      "instrumentation.ts",
       "*.config.*"
     ],
     "ignoreBinaries": [
       "agent-browser",
       "playwright"
+    ],
+    "ignoreDependencies": [
+      "@langfuse/client"
     ]
   },
   "devDependencies": {
@@ -71,8 +78,15 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.95.2",
+    "@langfuse/client": "^5.9.1",
+    "@langfuse/otel": "^5.9.1",
+    "@langfuse/tracing": "^5.9.1",
+    "@opentelemetry/sdk-node": "^0.220.0",
     "better-sqlite3": "^12.9.0",
     "hono": "^4.12.18",
     "pg": "^8.20.0"
-  }
+  },
+  "trustedDependencies": [
+    "protobufjs"
+  ]
 }
