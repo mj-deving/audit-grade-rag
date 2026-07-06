@@ -17,12 +17,20 @@ import type { RuntimeApp } from "./runtime-app.js";
 export function createHttpApp(runtime: RuntimeApp): Hono {
   const app = new Hono();
   const reportDownloads = new Map<string, Buffer>();
+  registerHealthRoutes(app, runtime);
   registerAuthRoutes(app, runtime);
   registerQueryRoutes(app, runtime);
   registerConsoleRoutes(app, runtime, reportDownloads);
   registerReportRoutes(app, runtime, reportDownloads);
   registerReplayRoutes(app, runtime);
   return app;
+}
+
+function registerHealthRoutes(app: Hono, runtime: RuntimeApp): void {
+  app.get("/health", async (context) => {
+    const health = await runtime.health();
+    return context.json({ ok: health.ok, data: health }, health.ok ? 200 : 503);
+  });
 }
 
 function registerAuthRoutes(app: Hono, runtime: RuntimeApp): void {
@@ -111,13 +119,13 @@ function registerPasskeyRoutes(app: Hono, runtime: RuntimeApp): void {
 }
 
 function registerQueryRoutes(app: Hono, runtime: RuntimeApp): void {
-  app.get("/api/query", (context) => {
+  app.get("/api/query", async (context) => {
     const sessionId = readCookie(context.req.header("cookie") ?? "", "agr_session");
     if (sessionId === null) {
       return unauthorized(context, new UnauthorizedError("anonymous query"));
     }
     const query = context.req.query("q") ?? "";
-    const result = runtime.query(sessionId, query);
+    const result = await runtime.queryAsync(sessionId, query);
     return context.json({ ok: true, data: result });
   });
 }
@@ -130,7 +138,10 @@ function registerConsoleRoutes(
   app.get("/console", async (context) => {
     const sessionId = requireSessionCookie(context, runtime);
     await ensureCorpus(runtime);
-    const result = runtime.query(sessionId, context.req.query("q") ?? "beantwortete Anfrage");
+    const result = await runtime.queryAsync(
+      sessionId,
+      context.req.query("q") ?? "beantwortete Anfrage",
+    );
     const view = renderConsole(result);
     return context.html(view.html, 200, { "content-security-policy": view.csp });
   });
@@ -151,10 +162,8 @@ function registerConsoleRoutes(
     await ensureCorpus(runtime);
     const docId = context.req.param("docId");
     const charOffset = Number(context.req.query("char_offset") ?? "0");
-    const chunk = runtime.ingest
-      .allChunks()
-      .find((candidate) => candidate.docId === docId && candidate.charStart >= charOffset);
-    if (chunk === undefined) {
+    const chunk = await runtime.findSourceChunk(docId, charOffset);
+    if (chunk === null) {
       return context.notFound();
     }
     const view = renderSourceViewer({ ...chunk, retrievalScore: 1, retrievalMethod: "rrf" });
@@ -265,7 +274,7 @@ function requireSessionCookie(context: Context, runtime: RuntimeApp): string {
 }
 
 async function ensureCorpus(runtime: RuntimeApp): Promise<void> {
-  if (runtime.ingest.activeSnapshot() === null) {
+  if ((await runtime.ingest.activeSnapshot()) === null) {
     await runtime.ingest.ingest({ corpusDir: "examples/eu-ai-act" });
   }
 }

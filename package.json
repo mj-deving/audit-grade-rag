@@ -26,6 +26,7 @@
     "audit:export": "tsx src/commands/audit-export.ts",
     "audit:replay": "tsx src/commands/audit-replay.ts",
     "report": "tsx src/commands/report.ts",
+    "start": "node dist/src/commands/server.js",
     "trace:probe": "tsx --env-file=.env src/eval/trace-probe.ts",
     "dataset:seed": "tsx --env-file=.env src/eval/langfuse-dataset-seed.ts",
     "eval:langfuse": "tsx --env-file=.env src/eval/langfuse-experiment.ts",
@@ -43,6 +44,7 @@
     "entry": [
       "src/index.ts",
       "src/cli.ts",
+      "src/commands/server.ts",
       "instrumentation.ts",
       "src/eval/trace-probe.ts",
       "src/eval/langfuse-dataset-seed.ts",
