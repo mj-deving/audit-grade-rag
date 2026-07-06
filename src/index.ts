@@ -1,6 +1,6 @@
 export { createHttpApp } from "./app/http-app.js";
-export type { RuntimeApp } from "./app/runtime-app.js";
-export { createRuntimeApp } from "./app/runtime-app.js";
+export type { RuntimeApp, RuntimeHealth } from "./app/runtime-app.js";
+export { createPostgresRuntimeApp, createRuntimeApp } from "./app/runtime-app.js";
 export type * from "./domain/types.js";
 export type { JsonPrimitive, JsonRecord, JsonValue } from "./lib/canonical-json.js";
 export { canonicalJson, toJsonValue } from "./lib/canonical-json.js";

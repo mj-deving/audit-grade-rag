@@ -98,6 +98,29 @@ subsequent `pnpm ingest` command uses the `DATABASE_URL` above so the five-minut
 path exercises the Postgres + pgvector ingestion path instead of the local
 in-memory fallback.
 
+## Production Container
+
+The container starts `pnpm start`, not the fixture dev server. With `DATABASE_URL`
+set, runtime queries use the Postgres + pgvector store and append query rows to
+the SQLite ledger at `AUDIT_LEDGER_PATH`.
+
+Required production environment:
+
+```bash
+DATABASE_URL=postgres://audit_grade_rag:audit_grade_rag@postgres:5432/audit_grade_rag
+BGE_M3_EMBEDDING_ENDPOINT=http://embeddings/embed
+AUDIT_LEDGER_PATH=/var/lib/audit-grade-rag/audit.sqlite
+CORPUS_DIR=examples/eu-ai-act
+```
+
+The bundled Compose file persists Postgres in `postgres-data` and the signed
+ledger in `audit-ledger`; both services bind to `127.0.0.1` only. Verify a live
+container with:
+
+```bash
+curl -fsS http://127.0.0.1:3000/health
+```
+
 ## Try the Core Workflows
 
 ```bash
