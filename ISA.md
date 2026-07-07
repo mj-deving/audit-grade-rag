@@ -4,11 +4,11 @@ slug: 20260510-091500_audit-grade-rag-v1
 project: audit-grade-rag
 effort: comprehensive
 effort_source: explicit
-phase: observe
-progress: 0/0
+phase: verify
+progress: 51/51
 mode: interactive
 started: 2026-05-10T09:15:00+02:00
-updated: 2026-05-10T09:15:00+02:00
+updated: 2026-05-26T20:30:00+02:00
 ---
 
 ## Problem
@@ -198,11 +198,18 @@ Deliver a self-hostable, open-source-auditable RAG application that ingests one 
 - **2026-05-10 — Hono over Fastify.** Hono's smaller surface and middleware ergonomics around the audit-pipeline (every request must traverse the audit-write middleware before the response is sent) made it the cleaner fit. Fastify is the fallback if a Hono limitation appears during EXECUTE.
 - **2026-05-10 — German-only operator UI in v1.** English UI added in v1.1. Shipping with German-only matches the DACH-pilot reality (compliance officers read German, not English) and removes a translation-maintenance burden that adds zero audit-story value.
 - **2026-05-10 — BSL 1.1 license over Apache 2.0.** BSL with a four-year change date to Apache 2.0 protects the G6 commercial bet during the window when SaaS competitors could fork-and-host before any commercial offering has product-market-fit, while the four-year automatic transition guarantees the project becomes fully open-source eventually. Reverts to Apache 2.0 if G6 is abandoned (decision documented as a falsifier).
+- **2026-05-26 — Productization path: Demo + Anchor Post (Path A).** Picked after a three-option strategic synthesis (A: Demo+Post / B: Direct Pilot / C: Open-Core scaffold). Path A leads with the bit-equal-replay primitive — the one moat no commercial competitor ships (verified via 2026-05-26 landscape scan covering watsonx.governance, Vectara, NeMo Guardrails, Mosaic, Aleph Alpha PhariaAssistant, deepset Haystack Enterprise, T-Systems). Deliverables: (1) public live demo at `audit-grade-rag.mjdeving.com` running deterministic profile against the `examples/eu-ai-act` corpus, (2) anchor post titled "The Only RAG That Can Replay" timed to EU AI Act §50 enforcement on **2 Aug 2026** (~68 days from decision date), (3) demo-walkthrough video, (4) updated README hero positioning around the replay primitive. Substrate-first compliant: this post becomes G6 evidence + G3 portfolio + blog post #1 in the substrate-before-distribution sequence.
+- **2026-05-26 — refined: G6 commercial alignment.** The 2026-05-10 G6 alignment stands but tightens: this is NOT a head-to-head sale against Aleph Alpha / deepset / T-Systems (unwinnable). The wedge is "the only RAG that produces a cryptographically replayable audit artifact a regulator can verify offline." Sales motion remains deferred until demo+post lands and inbound signal exists.
+- **2026-05-26 — refined: regulator-doc claim needs verification.** Competitor research flagged that the operative 2025/2026 BaFin document on AI is the **AI ICT Guidance (18 Dec 2025)**, not a named MaRisk AT 4.4 AI section. Decisions and Out of Scope previously referenced MaRisk AT 4.4 generically. Falsifier: re-read both source documents and update the marketing claim before any sales conversation. Tracked as a follow-up task.
+- **2026-05-26 — Katzilla evaluation: polite no for v1, bookmark for v2.** Cold-pitch evaluation 2026-05-26: Katzilla wraps 280+ government datasets with a `data_hash` per response. The hash covers their cached normalized response, not the upstream source byte stream, and their cache rotates on upstream update. Weaker determinism than the corpus-snapshot model already shipped. Bookmarked at `MEMORY/KNOWLEDGE/Companies/katzilla-dev.md` as a v2 candidate if/when agent-mode with live regulatory lookups enters scope.
+- **2026-05-26 — Algorithm tier override.** Classifier returned MODE: ALGORITHM TIER: E1 (read the prompt as a cold-pitch evaluation). Executor escalated to E3 because the conversation contained four explicit asks including a load-bearing G6 productization decision. Mismatch logged here per v6.3.0 conversation-context override rule. No advisor call this turn: the strategic pick was made by the user directly via AskUserQuestion, so advisor would have re-litigated a fresh decision rather than commitment-boundary checking — show-your-math justification for the soft delegation-floor skip.
 
 ## Changelog
 
-(Empty at OBSERVE phase. Conjecture / refuted-by / learned / criterion-now entries land here as the build progresses through the GoalMode `/goal` run and any iterations.)
+- **2026-07-07 — MCP adapter added as local stdio operator surface.** Added a thin `@modelcontextprotocol/sdk` v1 adapter exposing existing runtime primitives as MCP tools: `health`, `rag_query`, `audit_verify`, and `replay`. The adapter does not add a public HTTP route and remains operator-authenticated through the existing magic-link + passkey flow.
+- **2026-07-07 — MCP credential contract hardened.** The MCP operator passkey is now persisted in a dedicated private-key file (`AGR_MCP_CREDENTIAL_PATH`, or ignored fallback names) and registration only happens when the server reports that WebAuthn registration is required. Long-lived stdio sessions clear the cached cookie and re-authenticate once on `401`/`403`, so expired sessions do not require restarting the MCP process.
 
 ## Verification
 
-(Empty at OBSERVE phase. Per-ISC evidence — quoted command output, file contents, screenshot paths from `agent-browser` runs, sealed audit-excerpt SHAs — lands here at VERIFY phase, populated by the Codex `/goal` run and audited by Claude in supervisor mode per `GoalMode/Workflows/Launch.md` Phase 5.)
+- **2026-07-07 — Local MCP/code proof.** Commits `9f10a51`, `612fff0`, and `8c96418` add and harden the MCP adapter. Verified with `pnpm typecheck`, `pnpm lint`, `pnpm mcp:smoke`, `pnpm check:fast`, `pnpm build`, and `pnpm test:integration`.
+- **2026-07-07 — Review proof.** `~/.codex/skills/autoreview/scripts/autoreview --mode branch --base origin/feat/langfuse-tracing --no-web-search` returned clean with no accepted/actionable findings after fixing persisted passkey handling, expired-session refresh, and credential ignore coverage.
