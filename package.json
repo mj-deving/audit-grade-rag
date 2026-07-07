@@ -26,6 +26,9 @@
     "audit:export": "tsx src/commands/audit-export.ts",
     "audit:replay": "tsx src/commands/audit-replay.ts",
     "report": "tsx src/commands/report.ts",
+    "mcp": "tsx mcp/server.ts",
+    "mcp:smoke": "tsx mcp/smoke.ts",
+    "mcp:live-smoke": "tsx mcp/live-smoke.ts",
     "start": "node dist/src/commands/server.js",
     "trace:probe": "tsx --env-file=.env src/eval/trace-probe.ts",
     "dataset:seed": "tsx --env-file=.env src/eval/langfuse-dataset-seed.ts",
@@ -45,6 +48,9 @@
       "src/index.ts",
       "src/cli.ts",
       "src/commands/server.ts",
+      "mcp/server.ts",
+      "mcp/smoke.ts",
+      "mcp/live-smoke.ts",
       "instrumentation.ts",
       "src/eval/trace-probe.ts",
       "src/eval/langfuse-dataset-seed.ts",
@@ -52,6 +58,7 @@
     ],
     "project": [
       "src/**/*.ts",
+      "mcp/**/*.ts",
       "tests/**/*.ts",
       "e2e/**/*.mjs",
       "instrumentation.ts",
@@ -88,10 +95,12 @@
     "@langfuse/client": "^5.9.1",
     "@langfuse/otel": "^5.9.1",
     "@langfuse/tracing": "^5.9.1",
+    "@modelcontextprotocol/sdk": "1.29.0",
     "@opentelemetry/sdk-node": "^0.220.0",
     "better-sqlite3": "^12.9.0",
     "hono": "^4.12.18",
-    "pg": "^8.20.0"
+    "pg": "^8.20.0",
+    "zod": "^4.0.0"
   },
   "trustedDependencies": [
     "protobufjs"

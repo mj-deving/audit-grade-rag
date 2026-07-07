@@ -28,6 +28,12 @@
     "resolveJsonModule": true,
     "esModuleInterop": true
   },
-  "include": ["instrumentation.ts", "src/**/*.ts", "tests/**/*.ts", "vitest.config.ts"],
+  "include": [
+    "instrumentation.ts",
+    "mcp/**/*.ts",
+    "src/**/*.ts",
+    "tests/**/*.ts",
+    "vitest.config.ts"
+  ],
   "exclude": ["coverage", "dist", "node_modules"]
 }
