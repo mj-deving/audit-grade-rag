@@ -40,10 +40,8 @@ export function createAuditGradeRagClient(config: AuditGradeRagClientConfig): Au
   return {
     health: () => getJson(clientFetch, `${baseUrl}/health`),
     ragQuery: async (query) => {
-      const data = await getData(
-        clientFetch,
+      const data = await getAuthenticatedData(
         `${baseUrl}/api/query?q=${encodeURIComponent(query)}`,
-        await ensureSessionCookie(),
       );
       return summarizeQueryResult(data);
     },
@@ -54,13 +52,22 @@ export function createAuditGradeRagClient(config: AuditGradeRagClientConfig): Au
       return Promise.resolve(verifySqliteLedger(config.ledgerPath));
     },
     replay: async (entryId) =>
-      getData(
-        clientFetch,
-        `${baseUrl}/api/audit/${encodeURIComponent(entryId)}/replay`,
-        await ensureSessionCookie(),
-        { method: "POST" },
-      ),
+      getAuthenticatedData(`${baseUrl}/api/audit/${encodeURIComponent(entryId)}/replay`, {
+        method: "POST",
+      }),
   };
+
+  async function getAuthenticatedData(url: string, init: RequestInit = {}): Promise<JsonObject> {
+    try {
+      return await getData(clientFetch, url, await ensureSessionCookie(), init);
+    } catch (error) {
+      if (!isAuthFailure(error)) {
+        throw error;
+      }
+      sessionCookie = null;
+      return getData(clientFetch, url, await ensureSessionCookie(), init);
+    }
+  }
 
   async function ensureSessionCookie(): Promise<string> {
     if (sessionCookie !== null) {
@@ -265,7 +272,21 @@ async function assertOk(response: Response): Promise<void> {
     return;
   }
   const text = await response.text();
-  throw new Error(`audit-grade-rag request failed ${String(response.status)}: ${text}`);
+  throw new RequestFailure(response.status, text);
+}
+
+class RequestFailure extends Error {
+  constructor(
+    readonly status: number,
+    body: string,
+  ) {
+    super(`audit-grade-rag request failed ${String(status)}: ${body}`);
+    this.name = "RequestFailure";
+  }
+}
+
+function isAuthFailure(error: unknown): boolean {
+  return error instanceof RequestFailure && (error.status === 401 || error.status === 403);
 }
 
 function dataObject(value: unknown): JsonObject {
