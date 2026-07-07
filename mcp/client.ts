@@ -1,10 +1,13 @@
+import { createPrivateKey, generateKeyPairSync, sign } from "node:crypto";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { verifySqliteLedger } from "../src/modules/audit/ledger.js";
-import { createLocalPasskey } from "../src/modules/auth/passkey-proof.js";
 
 export type AuditGradeRagClientConfig = {
   readonly baseUrl: string;
   readonly operatorEmail: string;
   readonly ledgerPath?: string;
+  readonly credentialPath?: string;
   readonly fetch?: typeof fetch;
 };
 
@@ -63,7 +66,7 @@ export function createAuditGradeRagClient(config: AuditGradeRagClientConfig): Au
     if (sessionCookie !== null) {
       return sessionCookie;
     }
-    sessionCookie = await authenticate(clientFetch, baseUrl, config.operatorEmail);
+    sessionCookie = await authenticate(clientFetch, baseUrl, config);
     if (sessionCookie === null) {
       throw new Error("authentication response did not set agr_session cookie");
     }
@@ -74,8 +77,9 @@ export function createAuditGradeRagClient(config: AuditGradeRagClientConfig): Au
 async function authenticate(
   clientFetch: typeof fetch,
   baseUrl: string,
-  email: string,
+  config: AuditGradeRagClientConfig,
 ): Promise<string | null> {
+  const email = config.operatorEmail;
   if (email.length === 0) {
     throw new Error("AGR_OPERATOR_EMAIL is required for authenticated tools");
   }
@@ -86,8 +90,13 @@ async function authenticate(
     token: stringField(magicLink, "localDeliveryToken"),
   });
   const operatorId = stringField(consumed, "operatorId");
-  const passkey = createLocalPasskey("audit-grade-rag-mcp");
-  await registerPasskey(clientFetch, baseUrl, operatorId, passkey);
+  const passkey = loadPasskeyForConsumption(
+    config,
+    booleanField(consumed, "webauthnRegistrationRequired"),
+  );
+  if (booleanField(consumed, "webauthnRegistrationRequired")) {
+    await registerPasskey(clientFetch, baseUrl, operatorId, passkey);
+  }
   return loginWithPasskey(clientFetch, baseUrl, operatorId, passkey);
 }
 
@@ -95,7 +104,7 @@ async function registerPasskey(
   clientFetch: typeof fetch,
   baseUrl: string,
   operatorId: string,
-  passkey: ReturnType<typeof createLocalPasskey>,
+  passkey: StoredPasskey,
 ): Promise<void> {
   const registration = await postData(
     clientFetch,
@@ -116,7 +125,7 @@ async function loginWithPasskey(
   clientFetch: typeof fetch,
   baseUrl: string,
   operatorId: string,
-  passkey: ReturnType<typeof createLocalPasskey>,
+  passkey: StoredPasskey,
 ): Promise<string | null> {
   const authentication = await postData(
     clientFetch,
@@ -136,6 +145,73 @@ async function loginWithPasskey(
   });
   await assertOk(login);
   return cookiePair(login.headers.get("set-cookie"));
+}
+
+type StoredPasskey = {
+  readonly credentialId: string;
+  readonly publicKeyPem: string;
+  signChallenge(challenge: string): string;
+};
+
+type StoredPasskeyFile = {
+  readonly credentialId: string;
+  readonly publicKeyPem: string;
+  readonly privateKeyPem: string;
+};
+
+function loadPasskeyForConsumption(
+  config: AuditGradeRagClientConfig,
+  registrationRequired: boolean,
+): StoredPasskey {
+  const credentialPath = resolveCredentialPath(config);
+  if (!registrationRequired && !existsSync(credentialPath)) {
+    throw new Error(
+      `MCP passkey missing at ${credentialPath}; use a dedicated AGR_OPERATOR_EMAIL or restore the existing MCP credential`,
+    );
+  }
+  return existsSync(credentialPath)
+    ? readStoredPasskey(credentialPath)
+    : createStoredPasskey(credentialPath);
+}
+
+function resolveCredentialPath(config: AuditGradeRagClientConfig): string {
+  if (config.credentialPath !== undefined && config.credentialPath.length > 0) {
+    return config.credentialPath;
+  }
+  if (config.ledgerPath !== undefined && config.ledgerPath.length > 0) {
+    return join(dirname(config.ledgerPath), "mcp-passkey.json");
+  }
+  return ".audit-grade-rag-mcp-passkey.json";
+}
+
+function createStoredPasskey(credentialPath: string): StoredPasskey {
+  const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "P-256" });
+  const file: StoredPasskeyFile = {
+    credentialId: "audit-grade-rag-mcp",
+    publicKeyPem: publicKey.export({ format: "pem", type: "spki" }),
+    privateKeyPem: privateKey.export({ format: "pem", type: "pkcs8" }),
+  };
+  writeFileSync(credentialPath, `${JSON.stringify(file, null, 2)}\n`, { mode: 0o600 });
+  chmodSync(credentialPath, 0o600);
+  return passkeyFromFile(file);
+}
+
+function readStoredPasskey(credentialPath: string): StoredPasskey {
+  const parsed = JSON.parse(readFileSync(credentialPath, "utf8")) as unknown;
+  if (!isStoredPasskeyFile(parsed)) {
+    throw new Error(`invalid MCP passkey file at ${credentialPath}`);
+  }
+  return passkeyFromFile(parsed);
+}
+
+function passkeyFromFile(file: StoredPasskeyFile): StoredPasskey {
+  const privateKey = createPrivateKey(file.privateKeyPem);
+  return {
+    credentialId: file.credentialId,
+    publicKeyPem: file.publicKeyPem,
+    signChallenge: (challenge) =>
+      sign("SHA256", Buffer.from(challenge), privateKey).toString("base64url"),
+  };
 }
 
 function normalizeBaseUrl(value: string): string {
@@ -208,6 +284,14 @@ function stringField(value: JsonObject, field: string): string {
   return fieldValue;
 }
 
+function booleanField(value: JsonObject, field: string): boolean {
+  const fieldValue = value[field];
+  if (typeof fieldValue !== "boolean") {
+    throw new Error(`audit-grade-rag response missing boolean field ${field}`);
+  }
+  return fieldValue;
+}
+
 function summarizeQueryResult(data: JsonObject): RagQuerySummary {
   const ledgerEntry = objectField(data, "ledgerEntry") ?? {};
   return {
@@ -229,6 +313,18 @@ function cookiePair(value: string | null): string | null {
 
 function isObject(value: unknown): value is JsonObject {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isStoredPasskeyFile(value: unknown): value is StoredPasskeyFile {
+  if (!isObject(value)) {
+    return false;
+  }
+  const candidate: Partial<StoredPasskeyFile> = value;
+  return (
+    typeof candidate.credentialId === "string" &&
+    typeof candidate.publicKeyPem === "string" &&
+    typeof candidate.privateKeyPem === "string"
+  );
 }
 
 function field(value: JsonObject, key: string): unknown {
