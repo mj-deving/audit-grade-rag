@@ -79,10 +79,12 @@ export function createServerFromClient(client: AuditGradeRagClient): McpServer {
 
 function envConfig(): AuditGradeRagClientConfig {
   const ledgerPath = envValue("AGR_LEDGER_PATH");
+  const credentialPath = envValue("AGR_MCP_CREDENTIAL_PATH");
   return {
     baseUrl: envValue("AGR_BASE_URL") ?? "",
     operatorEmail: envValue("AGR_OPERATOR_EMAIL") ?? "",
     ...(ledgerPath === undefined ? {} : { ledgerPath }),
+    ...(credentialPath === undefined ? {} : { credentialPath }),
   };
 }
 

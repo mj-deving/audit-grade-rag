@@ -139,8 +139,9 @@ Run locally:
 
 ```bash
 AGR_BASE_URL=http://127.0.0.1:3000 \
-AGR_OPERATOR_EMAIL=operator@example.local \
+AGR_OPERATOR_EMAIL=mcp-operator@example.local \
 AGR_LEDGER_PATH=/absolute/path/to/audit.sqlite \
+AGR_MCP_CREDENTIAL_PATH=/absolute/path/to/mcp-passkey.json \
 pnpm mcp
 ```
 
@@ -155,8 +156,9 @@ Claude Code project config shape:
 ```bash
 claude mcp add audit-grade-rag --scope project \
   -e AGR_BASE_URL=http://127.0.0.1:3025 \
-  -e AGR_OPERATOR_EMAIL=operator@example.local \
+  -e AGR_OPERATOR_EMAIL=mcp-operator@example.local \
   -e AGR_LEDGER_PATH=/var/lib/audit-grade-rag/audit.sqlite \
+  -e AGR_MCP_CREDENTIAL_PATH=/var/lib/audit-grade-rag/mcp-passkey.json \
   -- pnpm --dir /absolute/path/to/audit-grade-rag mcp
 ```
 

@@ -4,10 +4,12 @@ import { createAuditGradeRagMcpServer } from "./server.js";
 
 const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 const ledgerPath = envValue("AGR_LEDGER_PATH");
+const credentialPath = envValue("AGR_MCP_CREDENTIAL_PATH");
 const server = createAuditGradeRagMcpServer({
   baseUrl: envValue("AGR_BASE_URL") ?? "",
   operatorEmail: envValue("AGR_OPERATOR_EMAIL") ?? "",
   ...(ledgerPath === undefined ? {} : { ledgerPath }),
+  ...(credentialPath === undefined ? {} : { credentialPath }),
 });
 const client = new Client({ name: "audit-grade-rag-live-smoke", version: "0.1.0" });
 
