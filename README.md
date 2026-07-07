@@ -121,6 +121,45 @@ container with:
 curl -fsS http://127.0.0.1:3000/health
 ```
 
+## MCP Adapter
+
+The repo ships a local stdio MCP adapter for operator-controlled proof work. It
+does not add public HTTP routes. In production, run it on the host/container
+side against the loopback app URL; the public hostname remains Cloudflare
+Access-gated.
+
+Tools:
+
+- `health`: `GET /health`
+- `rag_query`: authenticated `/api/query` with answer, citations, retrieved chunks, and ledger id
+- `audit_verify`: verify the configured SQLite ledger path
+- `replay`: authenticated `/api/audit/:entryId/replay`
+
+Run locally:
+
+```bash
+AGR_BASE_URL=http://127.0.0.1:3000 \
+AGR_OPERATOR_EMAIL=operator@example.local \
+AGR_LEDGER_PATH=/absolute/path/to/audit.sqlite \
+pnpm mcp
+```
+
+Protocol smoke without live credentials:
+
+```bash
+pnpm mcp:smoke
+```
+
+Claude Code project config shape:
+
+```bash
+claude mcp add audit-grade-rag --scope project \
+  -e AGR_BASE_URL=http://127.0.0.1:3025 \
+  -e AGR_OPERATOR_EMAIL=operator@example.local \
+  -e AGR_LEDGER_PATH=/var/lib/audit-grade-rag/audit.sqlite \
+  -- pnpm --dir /absolute/path/to/audit-grade-rag mcp
+```
+
 ## Try the Core Workflows
 
 ```bash
