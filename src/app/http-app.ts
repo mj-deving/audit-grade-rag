@@ -63,13 +63,17 @@ function registerDemoRoutes(app: Hono, demo: DemoApp): void {
     if (typeof entryId !== "string") {
       return demoPage(context, demo, "", null, null, "Keine Ledger-Zeile angegeben.", 400);
     }
+    // Reject before charging the budget. An unknown id, or a refusal row with no answer bytes, is a
+    // bad request that appends nothing, so it must not spend a write slot: charging it first would
+    // let anyone drain the global window and 429 the demo for everyone without growing the ledger.
+    if (!demo.replayable(entryId)) {
+      return demoPage(context, demo, "", null, null, replayRejectedMessage(), 400);
+    }
     // A replay appends its own signed row, so it is a write path and takes the same cap as a query.
     // Without this, one entry id lifted off the public page is an unbounded ledger-growth primitive.
     if (!demo.allow(clientKey(context))) {
       return demoPage(context, demo, "", null, null, rateLimitMessage(), 429);
     }
-    // An unknown id, or a row with no answer bytes (a refusal), makes the replay engine throw. That
-    // is a bad request from a public form, not a server fault, and must not surface as a 500.
     try {
       const replayed = demo.replay(entryId);
       const query = replayed.entry.queryText ?? "";

@@ -75,6 +75,7 @@ export type DemoApp = {
   readonly examples: readonly string[];
   ask(query: string): DemoAnswer;
   replay(entryId: string): DemoReplay;
+  replayable(entryId: string): boolean;
   entryById(entryId: string): LedgerEntry;
   verify(): LedgerVerification;
   allow(clientKey: string): boolean;
@@ -112,6 +113,7 @@ export async function createDemoApp(options: DemoAppOptions = {}): Promise<DemoA
     examples: demoExamples,
     ask: (query) => ask(ledger, chunks, provider, query),
     replay: (entryId) => replay(ledger, provider, entryId),
+    replayable: (entryId) => replayable(ledger, entryId),
     entryById: (entryId) => ledger.findById(entryId),
     verify: () => ledger.verifyRows(),
     allow: (clientKey) => limiter.allow(clientKey),
@@ -159,6 +161,20 @@ function ledgerInput(outcome: AnswerOutcome, query: string, profile: ProviderPro
     userIdHash: demoUserIdHash,
     ...(outcome.answer === undefined ? {} : { generatedAnswer: outcome.answer }),
   };
+}
+
+/**
+ * Whether a replay of this row would actually append anything. The rate limit is a budget for
+ * ledger WRITES, so a request that cannot write must not spend it: otherwise anyone could drain the
+ * global window with unknown ids and 429 the demo for every real visitor without growing the ledger
+ * by a single row.
+ */
+function replayable(ledger: AuditLedger, entryId: string): boolean {
+  try {
+    return ledger.findById(entryId).generatedAnswer !== null;
+  } catch {
+    return false;
+  }
 }
 
 function replay(
