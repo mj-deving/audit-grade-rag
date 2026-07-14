@@ -49,6 +49,15 @@ const rateLimitWindowMs = 5 * 60 * 1000;
 const rateLimitMaxQueries = 20;
 const rateLimitMaxKeys = 5000;
 
+/**
+ * The per-client cap is keyed on `x-forwarded-for`, which the caller controls: anyone can cycle the
+ * header and mint a fresh bucket per request. It is a speed bump against casual abuse, not a bound.
+ * This global cap is the bound. It is keyless, so no header trick evades it, and it is what limits
+ * how fast a public visitor can grow an append-only ledger on disk.
+ */
+const rateLimitMaxGlobalWrites = 60;
+const globalRateLimitKey = "__global__";
+
 type DemoAnswer = {
   readonly outcome: AnswerOutcome;
   readonly entry: LedgerEntry;
@@ -165,8 +174,13 @@ function replay(
 }
 
 /**
- * Fixed-window cap per client. The demo is a public write path into an append-only ledger on a
- * small volume, so an unbounded one would let anyone grow the disk without limit.
+ * Fixed-window cap over the demo's write paths. Every answer AND every replay appends a signed row
+ * to an append-only ledger, so both must pass through here: an unthrottled replay would let anyone
+ * take one entry id off the public page and grow the ledger without limit.
+ *
+ * Two windows, and only one of them is a real bound. The per-client window is keyed on a header the
+ * caller controls, so a spoofer mints a fresh bucket per request and walks through it. The global
+ * window is keyless and is what actually bounds disk growth.
  */
 class RateLimiter {
   private readonly windows = new Map<string, { startMs: number; count: number }>();
@@ -176,16 +190,32 @@ class RateLimiter {
   allow(clientKey: string): boolean {
     const now = this.clock.now();
     this.prune(now);
-    const current = this.windows.get(clientKey);
-    if (current === undefined || now - current.startMs >= rateLimitWindowMs) {
-      this.windows.set(clientKey, { startMs: now, count: 1 });
-      return true;
-    }
-    if (current.count >= rateLimitMaxQueries) {
+    if (!this.wouldAllow(clientKey, rateLimitMaxQueries, now)) {
       return false;
     }
-    current.count += 1;
+    if (!this.wouldAllow(globalRateLimitKey, rateLimitMaxGlobalWrites, now)) {
+      return false;
+    }
+    this.consume(clientKey, now);
+    this.consume(globalRateLimitKey, now);
     return true;
+  }
+
+  private wouldAllow(key: string, max: number, now: number): boolean {
+    const current = this.windows.get(key);
+    if (current === undefined || now - current.startMs >= rateLimitWindowMs) {
+      return true;
+    }
+    return current.count < max;
+  }
+
+  private consume(key: string, now: number): void {
+    const current = this.windows.get(key);
+    if (current === undefined || now - current.startMs >= rateLimitWindowMs) {
+      this.windows.set(key, { startMs: now, count: 1 });
+      return;
+    }
+    current.count += 1;
   }
 
   private prune(now: number): void {
@@ -193,7 +223,7 @@ class RateLimiter {
       return;
     }
     for (const [key, window] of this.windows) {
-      if (now - window.startMs >= rateLimitWindowMs) {
+      if (key !== globalRateLimitKey && now - window.startMs >= rateLimitWindowMs) {
         this.windows.delete(key);
       }
     }
