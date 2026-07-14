@@ -168,6 +168,34 @@ describe("public write paths are bounded", () => {
   });
 });
 
+describe("the write budget is only spent on actual writes", () => {
+  it("does not let invalid replays spend the shared write budget", async () => {
+    const fresh = await createDemoApp();
+    const isolated = createHttpApp(createRuntimeApp(), fresh);
+    // 200 replays of an id that does not exist. None of them can append a row, so none of them may
+    // charge the global window; otherwise this is a denial-of-service on every real visitor.
+    for (let index = 0; index < 200; index += 1) {
+      const response = await isolated.fetch(
+        new Request("http://demo.local/demo/replay", {
+          method: "POST",
+          headers: {
+            "content-type": "application/x-www-form-urlencoded",
+            "x-forwarded-for": `10.2.0.${String(index % 250)}`,
+          },
+          body: new URLSearchParams({ entry: "f".repeat(64) }).toString(),
+        }),
+      );
+      expect(response.status).toBe(400);
+    }
+    const after = await isolated.fetch(
+      new Request(`http://demo.local/demo?q=${encodeURIComponent("Kennzeichnung")}`, {
+        headers: { "x-forwarded-for": "198.51.100.7" },
+      }),
+    );
+    expect(after.status).toBe(200);
+  });
+});
+
 describe("the demo ledger tells the truth about how the answer was produced", () => {
   it("records the retrieval profile it actually ran, not the repo's bge-m3 default", () => {
     const entry = demo.ask("Wie müssen synthetische Inhalte gekennzeichnet werden?").entry;
