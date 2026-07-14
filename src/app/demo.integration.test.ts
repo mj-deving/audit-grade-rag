@@ -104,6 +104,70 @@ describe("replay is only offered where there is something to reproduce", () => {
   });
 });
 
+describe("public write paths are bounded", () => {
+  async function askAs(forwardedFor: string, query: string): Promise<Response> {
+    return app.fetch(
+      new Request(`http://demo.local/demo?q=${encodeURIComponent(query)}`, {
+        headers: { "x-forwarded-for": forwardedFor },
+      }),
+    );
+  }
+
+  it("a spoofed x-forwarded-for cannot mint unlimited ledger writes", async () => {
+    const fresh = await createDemoApp();
+    const isolated = createHttpApp(createRuntimeApp(), fresh);
+    const before = fresh.ledger.entries().length;
+    let throttled = 0;
+    // A new client key on every single request: the per-client window never fills. Only the global
+    // cap stands between a spoofer and unbounded growth of an append-only ledger.
+    for (let index = 0; index < 120; index += 1) {
+      const response = await isolated.fetch(
+        new Request(`http://demo.local/demo?q=${encodeURIComponent("Kennzeichnung")}`, {
+          headers: { "x-forwarded-for": `10.0.0.${String(index)}` },
+        }),
+      );
+      if (response.status === 429) {
+        throttled += 1;
+      }
+    }
+    const written = fresh.ledger.entries().length - before;
+    expect(throttled).toBeGreaterThan(0);
+    expect(written).toBeLessThanOrEqual(60);
+  });
+
+  it("throttles the replay route, which also appends a signed row", async () => {
+    const fresh = await createDemoApp();
+    const isolated = createHttpApp(createRuntimeApp(), fresh);
+    const entry = fresh.ask("Wie müssen synthetische Inhalte gekennzeichnet werden?").entry;
+    let throttled = 0;
+    // Past the global cap, and with a fresh client key each time so only the global cap can stop it.
+    for (let index = 0; index < 80; index += 1) {
+      const response = await isolated.fetch(
+        new Request("http://demo.local/demo/replay", {
+          method: "POST",
+          headers: {
+            "content-type": "application/x-www-form-urlencoded",
+            "x-forwarded-for": `10.1.0.${String(index)}`,
+          },
+          body: new URLSearchParams({ entry: entry.id }).toString(),
+        }),
+      );
+      if (response.status === 429) {
+        throttled += 1;
+      }
+    }
+    expect(throttled).toBeGreaterThan(0);
+  });
+
+  it("still answers a normal visitor who is nowhere near the cap", async () => {
+    const response = await askAs(
+      "203.0.113.9",
+      "Wie müssen synthetische Inhalte gekennzeichnet werden?",
+    );
+    expect(response.status).toBe(200);
+  });
+});
+
 describe("the demo ledger tells the truth about how the answer was produced", () => {
   it("records the retrieval profile it actually ran, not the repo's bge-m3 default", () => {
     const entry = demo.ask("Wie müssen synthetische Inhalte gekennzeichnet werden?").entry;
