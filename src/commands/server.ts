@@ -7,6 +7,7 @@ import {
 } from "node:http";
 import { dirname } from "node:path";
 import process from "node:process";
+import { createDemoApp } from "../app/demo-app.js";
 import { createHttpApp } from "../app/http-app.js";
 import { createPostgresRuntimeApp, createRuntimeApp, type RuntimeApp } from "../app/runtime-app.js";
 
@@ -15,6 +16,9 @@ type ServerEnv = NodeJS.ProcessEnv & {
   readonly AUDIT_LEDGER_PATH?: string;
   readonly CORPUS_DIR?: string;
   readonly DATABASE_URL?: string;
+  readonly DEMO_CORPUS_DIR?: string;
+  readonly DEMO_LEDGER_PATH?: string;
+  readonly PUBLIC_DEMO?: string;
   readonly PORT?: string;
 };
 
@@ -22,9 +26,20 @@ const env = process.env as ServerEnv;
 const port = Number(env.PORT ?? "3000");
 const corpusDir = env.CORPUS_DIR ?? "examples/eu-ai-act";
 const ledgerPath = env.AUDIT_LEDGER_PATH ?? "/var/lib/audit-grade-rag/audit.sqlite";
+const demoLedgerPath = env.DEMO_LEDGER_PATH ?? "/var/lib/audit-grade-rag/demo.sqlite";
 mkdirSync(dirname(ledgerPath), { recursive: true });
 const runtime = createRuntime();
-const app = createHttpApp(runtime);
+
+// Opt-in: the public demo route only exists where PUBLIC_DEMO=1 is set. A self-hosted operator
+// deployment stays entirely passkey-gated unless it asks for the public surface.
+const demo =
+  env.PUBLIC_DEMO === "1"
+    ? await createDemoApp({
+        ledgerPath: demoLedgerPath,
+        ...(env.DEMO_CORPUS_DIR === undefined ? {} : { corpusDir: env.DEMO_CORPUS_DIR }),
+      })
+    : undefined;
+const app = createHttpApp(runtime, demo);
 
 if (env.AUTO_INGEST_ON_START !== "0") {
   await runtime.ingest.ingest({ corpusDir });
