@@ -1,6 +1,13 @@
 import { createHash } from "node:crypto";
 import type { EmbeddingProfile } from "../../domain/types.js";
 import { sha256Hex } from "../../lib/hash.js";
+import {
+  isRetryableHttpStatus,
+  isRetryableNetworkError,
+  RetryableHttpError,
+  retryAsync,
+  type Sleep,
+} from "../../lib/resilience.js";
 
 export const defaultEmbeddingModel = "bge-m3@1024-v1";
 export const defaultEmbeddingDimension = 1024;
@@ -29,32 +36,53 @@ export class HashEmbeddingProvider implements EmbeddingProvider {
   }
 }
 
-class BgeM3EmbeddingProvider implements EmbeddingProvider {
-  readonly profile: EmbeddingProfile;
+export type BgeM3EmbeddingOptions = {
+  readonly endpoint: string;
+  readonly apiKey?: string;
+  // Per-call ceiling for a single embedding request; a slow endpoint fails fast (H-3).
+  readonly timeoutMs?: number;
+  // Retries after the first attempt on 429/5xx and network errors, backoff+jitter (H-2).
+  readonly retries?: number;
+  readonly fetchImpl?: typeof fetch;
+  readonly sleep?: Sleep;
+  readonly random?: () => number;
+};
 
-  constructor(
-    private readonly endpoint: string,
-    private readonly apiKey?: string,
-  ) {
+export class BgeM3EmbeddingProvider implements EmbeddingProvider {
+  readonly profile: EmbeddingProfile;
+  private readonly endpoint: string;
+  private readonly apiKey: string | undefined;
+  private readonly timeoutMs: number;
+  private readonly retries: number;
+  private readonly fetchImpl: typeof fetch;
+  private readonly sleep: Sleep | undefined;
+  private readonly random: (() => number) | undefined;
+
+  constructor(options: BgeM3EmbeddingOptions) {
+    this.endpoint = options.endpoint;
+    this.apiKey = options.apiKey;
+    this.timeoutMs = options.timeoutMs ?? 10_000;
+    this.retries = options.retries ?? 3;
+    this.fetchImpl = options.fetchImpl ?? fetch;
+    this.sleep = options.sleep;
+    this.random = options.random;
     this.profile = {
       id: "bge-m3",
       modelVersion: defaultEmbeddingModel,
       dimension: defaultEmbeddingDimension,
-      configHash: sha256Hex(`bge-m3:${endpoint}`),
+      configHash: sha256Hex(`bge-m3:${options.endpoint}`),
     };
   }
 
   async embed(text: string): Promise<EmbeddingVector> {
-    const response = await fetch(this.endpoint, {
-      method: "POST",
-      headers: this.headers(),
-      body: JSON.stringify({ input: [text], model: "bge-m3" }),
+    const embedding = await retryAsync((): Promise<EmbeddingVector> => this.fetchEmbedding(text), {
+      retries: this.retries,
+      baseDelayMs: 200,
+      maxDelayMs: 2_000,
+      isRetryable: isRetryableNetworkError,
+      ...(this.sleep === undefined ? {} : { sleep: this.sleep }),
+      ...(this.random === undefined ? {} : { random: this.random }),
     });
-    const payload: unknown = await response.json();
-    if (!response.ok) {
-      throw new Error(`bge-m3 embedding call failed with ${String(response.status)}`);
-    }
-    const embedding = readEmbedding(payload);
     if (embedding.length !== this.profile.dimension) {
       throw new Error(
         `bge-m3 embedding dimension ${String(embedding.length)} did not match ${String(
@@ -63,6 +91,24 @@ class BgeM3EmbeddingProvider implements EmbeddingProvider {
       );
     }
     return embedding;
+  }
+
+  private async fetchEmbedding(text: string): Promise<EmbeddingVector> {
+    const response = await this.fetchImpl(this.endpoint, {
+      method: "POST",
+      headers: this.headers(),
+      body: JSON.stringify({ input: [text], model: "bge-m3" }),
+      signal: AbortSignal.timeout(this.timeoutMs),
+    });
+    if (!response.ok) {
+      const detail = `bge-m3 embedding call failed with ${String(response.status)}`;
+      if (isRetryableHttpStatus(response.status)) {
+        throw new RetryableHttpError(response.status, detail);
+      }
+      throw new Error(detail);
+    }
+    const payload: unknown = await response.json();
+    return readEmbedding(payload);
   }
 
   private headers(): Record<string, string> {
@@ -80,7 +126,10 @@ export function requireConfiguredEmbeddingProvider(
   if (endpoint === undefined || endpoint.length === 0) {
     throw new Error("BGE_M3_EMBEDDING_ENDPOINT is required for bge-m3 embeddings");
   }
-  return new BgeM3EmbeddingProvider(endpoint, env.BGE_M3_API_KEY);
+  return new BgeM3EmbeddingProvider({
+    endpoint,
+    ...(env.BGE_M3_API_KEY === undefined ? {} : { apiKey: env.BGE_M3_API_KEY }),
+  });
 }
 
 export function embedText(text: string, dimension = defaultEmbeddingDimension): EmbeddingVector {

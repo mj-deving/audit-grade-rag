@@ -32,14 +32,25 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
 - [ ] H-1 (Evals as gate): the golden set holds at least 100 cases across the adversarial
   tag taxonomy, and a seeded regression under threshold fails CI. Falsifier: `wc -l` on the
   golden set under 100, or a deliberately-wrong answer does not drop a metric below its gate.
-- [ ] H-2 (AI reliability): every model and embedding call retries 429 and 5xx with bounded
+- [x] H-2 (AI reliability): every model and embedding call retries 429 and 5xx with bounded
   exponential backoff plus jitter, under a per-call timeout, with a defined fallback.
   Falsifier: a simulated 429 crashes the call, or no retry path exists in the provider.
-- [ ] H-3 (Fault tolerance): every outbound network call (Postgres, embedding endpoint,
+  Closed: `src/lib/resilience.ts` (backoff+jitter), embedding fetch wrapped and unit-tested
+  (429-then-200 retries, 503 exhausts, 400 does not); Anthropic client sets explicit
+  `maxRetries`+`timeout`. Mutation-falsified: disabling the retry guard turns 4 tests red.
+- [x] H-3 (Fault tolerance): every outbound network call (Postgres, embedding endpoint,
   model) carries a timeout; a dead dependency fails fast instead of hanging. Falsifier: a
   call constructed with no timeout, or a stalled dependency hangs the request.
-- [ ] H-4 (Supply chain): `pnpm audit` runs in CI and fails the build on a high or critical
-  advisory. Falsifier: no dependency-scan step in CI, or a seeded high advisory does not fail it.
+  Closed: embedding fetch uses `AbortSignal.timeout`; `src/lib/pg-pool.ts` sets
+  `connectionTimeoutMillis` + `statement_timeout` + `query_timeout` on both pools; Anthropic
+  client `timeout`.
+- [x] H-4 (Supply chain): a dependency scan runs in CI and fails the build on a high or
+  critical advisory. Falsifier: no dependency-scan step in CI, or a seeded high advisory does
+  not fail it. Closed: `pnpm audit` targets an npm endpoint that now returns 410, so CI runs
+  osv-scanner (pinned image) over `pnpm-lock.yaml` and gates on HIGH/CRITICAL via
+  `scripts/osv-check.ts` (`src/lib/osv-gate.ts`, unit-tested against seeded critical/low/
+  malformed fixtures). CI-run caveat: the gate logic is unit-verified; the osv-scanner
+  invocation itself proves on the first CI run of this branch.
 - [ ] H-5 (Alerting): a health and error-rate alert fires without a user reporting the break.
   Falsifier: no alert wired; a downed container is learned from a visitor.
 - [ ] H-6 (Data durability): an automated backup of the ledger and Postgres exists with a

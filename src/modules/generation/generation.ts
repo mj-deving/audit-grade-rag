@@ -94,9 +94,20 @@ export class AnthropicMessagesProvider implements LlmProvider {
   readonly profile: ProviderProfile;
   private readonly client: Anthropic;
 
-  constructor(options: { readonly apiKey: string; readonly model?: string }) {
+  constructor(options: {
+    readonly apiKey: string;
+    readonly model?: string;
+    readonly timeoutMs?: number;
+    readonly maxRetries?: number;
+  }) {
     const model = options.model ?? "claude-sonnet-4-6";
-    this.client = new Anthropic({ apiKey: options.apiKey });
+    // The SDK retries 429/5xx and connection errors with exponential backoff plus jitter;
+    // set the ceiling and the per-request timeout explicitly rather than leaning on defaults (H-2/H-3).
+    this.client = new Anthropic({
+      apiKey: options.apiKey,
+      timeout: options.timeoutMs ?? 60_000,
+      maxRetries: options.maxRetries ?? 3,
+    });
     this.profile = {
       id: "anthropic",
       name: "Anthropic Claude Messages API",
