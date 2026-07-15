@@ -255,6 +255,7 @@ http://127.0.0.1:3000/console
 
 ## Docs
 
+- [Architecture spine](docs/ARCHITECTURE.md): the one-minute map of contract, provenance, primitives, proof, and limits
 - [Data residency](docs/data-residency.md)
 - [Audit ledger](docs/audit-ledger.md)
 - [Replay](docs/replay.md)
