@@ -36,8 +36,10 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   exponential backoff plus jitter, under a per-call timeout, with a defined fallback.
   Falsifier: a simulated 429 crashes the call, or no retry path exists in the provider.
   Closed: `src/lib/resilience.ts` (backoff+jitter), embedding fetch wrapped and unit-tested
-  (429-then-200 retries, 503 exhausts, 400 does not); Anthropic client sets explicit
-  `maxRetries`+`timeout`. Mutation-falsified: disabling the retry guard turns 4 tests red.
+  (429-then-200 retries, 503 exhausts, 400 does not); Anthropic SDK client sets explicit
+  `maxRetries`+`timeout`; the Claude-CLI provider retries on a timed-out invocation (transient),
+  not on a deterministic non-zero exit. Mutation-falsified: disabling the retry guard turns 4
+  tests red.
 - [x] H-3 (Fault tolerance): every outbound network call (Postgres, embedding endpoint,
   model) carries a timeout; a dead dependency fails fast instead of hanging. Falsifier: a
   call constructed with no timeout, or a stalled dependency hangs the request.
@@ -49,8 +51,11 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   not fail it. Closed: `pnpm audit` targets an npm endpoint that now returns 410, so CI runs
   osv-scanner (pinned image) over `pnpm-lock.yaml` and gates on HIGH/CRITICAL via
   `scripts/osv-check.ts` (`src/lib/osv-gate.ts`, unit-tested against seeded critical/low/
-  malformed fixtures). CI-run caveat: the gate logic is unit-verified; the osv-scanner
-  invocation itself proves on the first CI run of this branch.
+  malformed fixtures). Fails closed: advisories with no CVSS `max_severity` fall back to the
+  severity label, and an advisory whose severity cannot be established at all is flagged rather
+  than passed; CI treats any osv-scanner exit other than 0/1 as an infra failure. CI-run
+  caveat: the gate logic is unit-verified; the osv-scanner invocation itself proves on the
+  first CI run of this branch.
 - [ ] H-5 (Alerting): a health and error-rate alert fires without a user reporting the break.
   Falsifier: no alert wired; a downed container is learned from a visitor.
 - [ ] H-6 (Data durability): an automated backup of the ledger and Postgres exists with a

@@ -20,12 +20,17 @@ export function isRetryableHttpStatus(status: number): boolean {
 
 export function isRetryableNetworkError(error: unknown): boolean {
   // A timed-out fetch (AbortSignal.timeout) rejects with a TimeoutError; a caller abort
-  // rejects with AbortError; a dropped connection rejects with a TypeError from undici.
-  return (
-    error instanceof RetryableHttpError ||
-    (error instanceof Error &&
-      (error.name === "TimeoutError" || error.name === "AbortError" || error.name === "TypeError"))
-  );
+  // rejects with AbortError.
+  if (error instanceof RetryableHttpError) {
+    return true;
+  }
+  if (error instanceof Error && (error.name === "TimeoutError" || error.name === "AbortError")) {
+    return true;
+  }
+  // undici raises a TypeError for genuine transport failures ("fetch failed") and attaches a
+  // `cause`. A malformed URL or bad header is also a TypeError but carries no cause; that is a
+  // deterministic misconfiguration and must surface immediately rather than be retried.
+  return error instanceof TypeError && (error as { readonly cause?: unknown }).cause !== undefined;
 }
 
 export type Sleep = (ms: number) => Promise<void>;

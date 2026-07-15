@@ -59,6 +59,12 @@ export class BgeM3EmbeddingProvider implements EmbeddingProvider {
   private readonly random: (() => number) | undefined;
 
   constructor(options: BgeM3EmbeddingOptions) {
+    // Surface a misconfigured endpoint at construction time instead of retrying a doomed fetch.
+    try {
+      void new URL(options.endpoint);
+    } catch {
+      throw new Error(`BGE_M3_EMBEDDING_ENDPOINT is not a valid URL: ${options.endpoint}`);
+    }
     this.endpoint = options.endpoint;
     this.apiKey = options.apiKey;
     this.timeoutMs = options.timeoutMs ?? 10_000;

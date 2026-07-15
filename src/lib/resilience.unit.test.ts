@@ -21,16 +21,23 @@ describe("isRetryableHttpStatus", () => {
 });
 
 describe("isRetryableNetworkError", () => {
-  it("classifies timeout, abort, and dropped-connection errors as retryable", () => {
+  it("classifies timeout, abort, and transport errors as retryable", () => {
     const timeout = new Error("timed out");
     timeout.name = "TimeoutError";
     const abort = new Error("aborted");
     abort.name = "AbortError";
+    // undici transport failures attach a `cause`; that is the retryable case.
+    const transport = new TypeError("fetch failed", { cause: new Error("ECONNRESET") });
     expect(isRetryableNetworkError(timeout)).toBe(true);
     expect(isRetryableNetworkError(abort)).toBe(true);
-    expect(isRetryableNetworkError(new TypeError("fetch failed"))).toBe(true);
+    expect(isRetryableNetworkError(transport)).toBe(true);
     expect(isRetryableNetworkError(new RetryableHttpError(503))).toBe(true);
     expect(isRetryableNetworkError(new Error("bad request"))).toBe(false);
+  });
+
+  it("does not retry a bare TypeError with no cause (a deterministic misconfig)", () => {
+    // e.g. `new URL(badEndpoint)` or an invalid header raises a causeless TypeError.
+    expect(isRetryableNetworkError(new TypeError("Invalid URL"))).toBe(false);
   });
 });
 
