@@ -1,0 +1,76 @@
+# Production Hardening
+
+Tracks this build from demo to production-ready-to-a-named-scope, against the MJ-OS
+production-readiness standard (the two-layer floor: engineering + AI). The product ISA
+(`ISA.md`) stays frozen at its v1 verify state; this file is the hardening spine and its
+criteria live here until each is closed with tool evidence.
+
+## Scope and the honest claim target
+
+Production for this build is single-operator self-host. Its production is the operator's
+own daily use and the evals run against it, not customer traffic. The claim, once the
+floor holds, is:
+
+> production-ready to level: single-operator self-host; scope: public read-only demo plus
+> passkey-gated operator console on my own infra (automation-host VPS). Not multi-tenant,
+> not customer-facing.
+
+Until every criterion below is closed, this build is a demo with a named-scope roadmap,
+not production-ready. No bare badge.
+
+## Gap-scan result (2026-07-15)
+
+Passing floor dimensions: deploy/rollback, disposability, testing-on-data-path,
+prompt-injection surface (read-only, no tools), LLM observability (Langfuse OTel on main),
+per-call spend cap (`maxBudgetUsd`), secrets out of code. Open floor items become the
+criteria below.
+
+## Criteria
+
+Each names the probe that falsifies it. Closed only on tool evidence of the right modality.
+
+- [ ] H-1 (Evals as gate): the golden set holds at least 100 cases across the adversarial
+  tag taxonomy, and a seeded regression under threshold fails CI. Falsifier: `wc -l` on the
+  golden set under 100, or a deliberately-wrong answer does not drop a metric below its gate.
+- [ ] H-2 (AI reliability): every model and embedding call retries 429 and 5xx with bounded
+  exponential backoff plus jitter, under a per-call timeout, with a defined fallback.
+  Falsifier: a simulated 429 crashes the call, or no retry path exists in the provider.
+- [ ] H-3 (Fault tolerance): every outbound network call (Postgres, embedding endpoint,
+  model) carries a timeout; a dead dependency fails fast instead of hanging. Falsifier: a
+  call constructed with no timeout, or a stalled dependency hangs the request.
+- [ ] H-4 (Supply chain): `pnpm audit` runs in CI and fails the build on a high or critical
+  advisory. Falsifier: no dependency-scan step in CI, or a seeded high advisory does not fail it.
+- [ ] H-5 (Alerting): a health and error-rate alert fires without a user reporting the break.
+  Falsifier: no alert wired; a downed container is learned from a visitor.
+- [ ] H-6 (Data durability): an automated backup of the ledger and Postgres exists with a
+  tested restore that re-verifies the signed chain. Falsifier: no automated backup, or a
+  restore that has never been exercised end to end.
+- [ ] H-7 (Reliability SLO): a written, measured success target (p95 latency and success
+  rate) exists and is measured against the running deploy. Falsifier: a target with no
+  measurement, or no target at all.
+
+## Test strategy
+
+| ISC | type | check | threshold | tool |
+|---|---|---|---|---|
+| H-1 | eval | golden-set size and a seeded-regression run | >=100 cases; regression fails gate | `wc -l`, `pnpm eval` |
+| H-2 | unit | fake transport returns 429 then 200; assert retried | retries, succeeds, bounded | vitest + mutation-falsify |
+| H-3 | unit | call with a stalled fake dependency | rejects on timeout, no hang | vitest + mutation-falsify |
+| H-4 | ci | audit step present and fails on a seeded advisory | non-zero exit on high+ | CI run |
+| H-5 | manual | kill a container, confirm the alert fires | alert observed | deploy-side, Marius gate |
+| H-6 | integration | back up, wipe, restore, verify chain | chain verifies post-restore | `pnpm audit:verify` |
+| H-7 | manual | SLO doc plus a measured sample from the deploy | target stated and measured | runbook + probe |
+
+## Waves
+
+Ordered by dependency and blast radius (self-contained code first, deploy-side infra last).
+
+- **Wave 1 (self-contained code, no infra):** H-2, H-3, H-4. Lands as one Forge-audited PR.
+- **Wave 2 (evals, the single most load-bearing item):** H-1. Dataset authoring; own PR.
+- **Wave 3 (deploy-side, needs an operator hand on the VPS/CF):** H-5, H-6, H-7. Backup
+  cron, alert wiring, SLO measurement against the live deploy.
+
+Each wave: code and test together, mutation-falsify the test, full gate green, mandatory
+cross-vendor audit (model id read from the auditing vendor's own banner, builder never the
+auditor), remediate first-hand, then land. No wave closes the production-ready claim on its
+own; the claim holds only when every criterion above is checked.
