@@ -6,7 +6,9 @@ services:
       POSTGRES_USER: audit_grade_rag
       POSTGRES_PASSWORD: audit_grade_rag
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U audit_grade_rag -d audit_grade_rag"]
       interval: 5s
@@ -20,6 +22,24 @@ services:
     environment:
       PORT: "3000"
       DATABASE_URL: "postgres://audit_grade_rag:audit_grade_rag@postgres:5432/audit_grade_rag"
+      BGE_M3_EMBEDDING_ENDPOINT: "${BGE_M3_EMBEDDING_ENDPOINT:?BGE_M3_EMBEDDING_ENDPOINT is required}"
+      BGE_M3_API_KEY: "${BGE_M3_API_KEY:-}"
+      AUDIT_LEDGER_PATH: "/var/lib/audit-grade-rag/audit.sqlite"
+      CORPUS_DIR: "examples/eu-ai-act"
     ports:
-      - "3000:3000"
-    command: pnpm dev
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - audit-ledger:/var/lib/audit-grade-rag
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  postgres-data:
+  audit-ledger:

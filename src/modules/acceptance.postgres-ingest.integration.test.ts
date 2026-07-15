@@ -5,9 +5,13 @@ import { join } from "node:path";
 import { promisify } from "node:util";
 import { Pool } from "pg";
 import { expect, it } from "vitest";
+import { createPostgresRuntimeApp } from "../app/runtime-app.js";
 import { AuditLedger } from "./audit/ledger.js";
+import { verifySqliteLedger } from "./audit/ledger-verify.js";
+import { EvidenceEchoProvider } from "./generation/generation.js";
 import { HashEmbeddingProvider } from "./ingest/embedding.js";
 import { PostgresIngestionStore } from "./ingest/postgres-store.js";
+import { replayArtifactsFromEntry, replayLedgerEntry } from "./replay/replay.js";
 import { retrievePostgresChunks } from "./retrieval/postgres-retrieval.js";
 
 const execFileAsync = promisify(execFile);
@@ -33,6 +37,62 @@ it("runs snapshot-bound BM25 plus dense retrieval with RRF and refusal", async (
   const pool = new Pool({ connectionString: database.url });
   try {
     await runRetrievalAssertions(pool, dir);
+  } finally {
+    await pool.end();
+    await rm(dir, { recursive: true, force: true });
+    await database.cleanup();
+  }
+}, 120_000);
+
+// No mocks: production runtime persists corpus in Postgres and query audit rows in SQLite.
+it("serves cited Postgres queries and keeps a verifiable ledger across runtime restart", async () => {
+  const database = await postgresDatabase();
+  const dir = await mkdtemp(join(tmpdir(), "agr-pg-runtime-"));
+  const ledgerPath = join(dir, "audit.sqlite");
+  const pool = new Pool({ connectionString: database.url });
+  const embeddingProvider = new HashEmbeddingProvider();
+  try {
+    await writeRetrievalCorpus(dir);
+    const runtime = createPostgresRuntimeApp({
+      databaseUrl: database.url,
+      pool,
+      ledgerPath,
+      embeddingProvider,
+    });
+    await runtime.ingest.ingest({ corpusDir: dir });
+    const session = runtime.bootstrapOperator("operator@example.local");
+    const result = await runtime.queryAsync(session.id, "Auditpflicht beleg alpha", 4);
+    const replay = replayLedgerEntry(
+      new AuditLedger(undefined, ledgerPath),
+      result.ledgerEntry,
+      new EvidenceEchoProvider({
+        id: result.ledgerEntry.providerProfileId,
+        name: result.ledgerEntry.providerProfileId,
+        modelVersion: result.ledgerEntry.modelVersion,
+        replayCapability: result.ledgerEntry.providerReplayCapability,
+        supportsSeed: result.ledgerEntry.seed !== null,
+        configHash: result.ledgerEntry.providerProfileId,
+      }),
+      replayArtifactsFromEntry(result.ledgerEntry),
+    );
+    const restarted = createPostgresRuntimeApp({
+      databaseUrl: database.url,
+      pool,
+      ledgerPath,
+      embeddingProvider,
+    });
+    const health = await restarted.health();
+
+    expect(result.outcome).toBe("answered");
+    expect(result.claims.flatMap((claim) => claim.citations)).not.toHaveLength(0);
+    expect(
+      result.retrievedChunks.every((chunk) => chunk.corpusSnapshotId === health.activeSnapshotId),
+    ).toBe(true);
+    expect(verifySqliteLedger(ledgerPath)).toMatchObject({ ok: true });
+    expect(replay.status).toBe("passed");
+    expect(health.ok).toBe(true);
+    expect(health.storage).toBe("postgres");
+    expect(health.ledgerEntries).toBeGreaterThanOrEqual(3);
   } finally {
     await pool.end();
     await rm(dir, { recursive: true, force: true });

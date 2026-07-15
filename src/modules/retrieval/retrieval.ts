@@ -1,4 +1,5 @@
 import type { CorpusChunk, RetrievedChunk } from "../../domain/types.js";
+import { foldGerman } from "../../lib/german.js";
 
 export type RetrievalOptions = {
   readonly topK?: number;
@@ -122,8 +123,7 @@ function compareRetrievedChunks(left: RetrievedChunk, right: RetrievedChunk): nu
 }
 
 function terms(text: string): readonly string[] {
-  return text
-    .toLowerCase()
+  return foldGerman(text.toLowerCase())
     .replace(/[^\p{L}\p{N}\s-]/gu, " ")
     .split(/\s+/u)
     .filter((term) => term.length > 1);

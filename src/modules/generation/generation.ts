@@ -108,6 +108,8 @@ export class AnthropicMessagesProvider implements LlmProvider {
   }
 
   async generate(request: LlmRequest): Promise<string> {
+    // Traced automatically by the OpenInference AnthropicInstrumentation registered in
+    // instrumentation.ts (model, tokens, input/output, generation type). No manual span here.
     const message = await this.client.messages.create({
       max_tokens: 512,
       messages: [{ role: "user", content: request.prompt }],
