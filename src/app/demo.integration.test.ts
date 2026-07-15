@@ -1,7 +1,7 @@
 import type { Hono } from "hono";
 import { beforeAll, describe, expect, it } from "vitest";
 import { createDemoApp, type DemoApp } from "./demo-app.js";
-import { createHttpApp } from "./http-app.js";
+import { createDemoOnlyHttpApp, createHttpApp } from "./http-app.js";
 import { createRuntimeApp } from "./runtime-app.js";
 
 let app: Hono;
@@ -227,5 +227,45 @@ describe("the demo does not open the operator console", () => {
     const runtime = createRuntimeApp();
     expect(demo.ledger).not.toBe(runtime.ledger);
     expect(runtime.ledger.entries()).toHaveLength(0);
+  });
+});
+
+describe("the public demo instance mounts only demo routes", () => {
+  it("serves /demo but has no operator route at all", async () => {
+    const app = createDemoOnlyHttpApp(await createDemoApp());
+    const status = async (path: string, init?: RequestInit): Promise<number> =>
+      (await app.fetch(new Request(`http://audit-grade-rag-demo.mjdeving.com${path}`, init)))
+        .status;
+    expect(await status("/demo")).toBe(200);
+    // Absent, not merely gated: an operator route does not exist on the demo instance, so it 404s.
+    // The unauthenticated public host therefore cannot reach the auth bootstrap even if the tunnel
+    // path-scope failed open.
+    expect(await status("/console")).toBe(404);
+    expect(await status("/auth/operator")).toBe(404);
+    expect(await status("/api/query?q=x")).toBe(404);
+    expect(await status("/api/auth/magic-link/request", { method: "POST", body: "{}" })).toBe(404);
+    expect(
+      await status("/api/auth/webauthn/authenticate/verify", { method: "POST", body: "{}" }),
+    ).toBe(404);
+    // A /demo-prefixed path that is not exactly /demo or /demo/replay does not smuggle in a route.
+    expect(await status("/demoxyz")).toBe(404);
+    expect(await status("/demo/..%2fconsole")).toBe(404);
+  });
+});
+
+describe("the demo refuses writes past its ledger ceiling", () => {
+  it("returns 503 once the demo ledger reaches capacity, without a 500", async () => {
+    const demo = await createDemoApp({ maxTotalRows: 1 });
+    const app = createHttpApp(createRuntimeApp(), demo);
+    const ask = async (): Promise<Response> =>
+      app.fetch(
+        new Request(`http://demo.local/demo?q=${encodeURIComponent("Kennzeichnung")}`, {
+          headers: { "x-forwarded-for": "203.0.113.50" },
+        }),
+      );
+    expect((await ask()).status).toBe(200); // the first write reaches the ceiling of one row
+    const full = await ask();
+    expect(full.status).toBe(503);
+    expect(await full.text()).toContain("Obergrenze");
   });
 });
