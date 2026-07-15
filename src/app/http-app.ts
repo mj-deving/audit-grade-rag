@@ -38,6 +38,20 @@ export function createHttpApp(runtime: RuntimeApp, demo?: DemoApp): Hono {
 }
 
 /**
+ * The public demo runs as its own process (server.ts DEMO_ONLY=1) built from this app. It mounts
+ * ONLY the demo routes and a health check: no auth, no console, no query, no report, no operator
+ * replay route exists on it at all. So the unauthenticated public hostname cannot reach the operator
+ * auth bootstrap even if the tunnel path-scope ever fails open. This is the second layer the tunnel
+ * regex is not.
+ */
+export function createDemoOnlyHttpApp(demo: DemoApp): Hono {
+  const app = new Hono();
+  app.get("/health", (context) => context.json({ ok: true, data: { surface: "demo" } }));
+  registerDemoRoutes(app, demo);
+  return app;
+}
+
+/**
  * The public demo. It is deliberately the only unauthenticated surface that can reach a corpus,
  * and it reaches its OWN corpus and its OWN ledger (see demo-app.ts) — never the operator's. It
  * adds no session, weakens no gate, and shares no state with the routes above.
@@ -50,6 +64,9 @@ function registerDemoRoutes(app: Hono, demo: DemoApp): void {
     }
     if (query.length === 0) {
       return demoPage(context, demo, "", null, null, null, 200);
+    }
+    if (demo.atCapacity()) {
+      return demoPage(context, demo, query, null, null, demoFullMessage(), 503);
     }
     if (!demo.allow(clientKey(context))) {
       return demoPage(context, demo, query, null, null, rateLimitMessage(), 429);
@@ -68,6 +85,9 @@ function registerDemoRoutes(app: Hono, demo: DemoApp): void {
     // let anyone drain the global window and 429 the demo for everyone without growing the ledger.
     if (!demo.replayable(entryId)) {
       return demoPage(context, demo, "", null, null, replayRejectedMessage(), 400);
+    }
+    if (demo.atCapacity()) {
+      return demoPage(context, demo, "", null, null, demoFullMessage(), 503);
     }
     // A replay appends its own signed row, so it is a write path and takes the same cap as a query.
     // Without this, one entry id lifted off the public page is an unbounded ledger-growth primitive.
@@ -121,6 +141,10 @@ function rateLimitMessage(): string {
 
 function replayRejectedMessage(): string {
   return "Diese Ledger-Zeile lässt sich nicht erneut ausführen. Eine Verweigerung enthält keine Antwort-Bytes, und eine unbekannte Zeilen-ID kann nicht reproduziert werden.";
+}
+
+function demoFullMessage(): string {
+  return "Das Demo-Ledger hat seine Obergrenze erreicht und wird beim nächsten Deploy zurückgesetzt. Bitte später erneut versuchen.";
 }
 
 function registerHealthRoutes(app: Hono, runtime: RuntimeApp): void {

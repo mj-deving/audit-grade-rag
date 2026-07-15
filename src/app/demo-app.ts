@@ -58,6 +58,16 @@ const rateLimitMaxKeys = 5000;
 const rateLimitMaxGlobalWrites = 60;
 const globalRateLimitKey = "__global__";
 
+/**
+ * A hard ceiling on the demo ledger, independent of the per-window rate. The rate cap bounds how
+ * FAST the ledger grows; this bounds how LARGE it ever gets. The demo runs in its own container
+ * against its own volume (services/audit-grade-rag/install.sh), so this only ever bounds the demo's
+ * own disk, never the operator's, but an append-only ledger with no ceiling still fills a disk given
+ * enough uptime. Demo rows carry no retention value; past the ceiling the demo refuses new writes
+ * until the ledger is reset (a fresh volume on deploy, or the volume cleared).
+ */
+const demoMaxTotalRows = 5000;
+
 type DemoAnswer = {
   readonly outcome: AnswerOutcome;
   readonly entry: LedgerEntry;
@@ -77,6 +87,7 @@ export type DemoApp = {
   replay(entryId: string): DemoReplay;
   replayable(entryId: string): boolean;
   entryById(entryId: string): LedgerEntry;
+  atCapacity(): boolean;
   verify(): LedgerVerification;
   allow(clientKey: string): boolean;
 };
@@ -85,6 +96,7 @@ export type DemoAppOptions = {
   readonly corpusDir?: string;
   readonly ledgerPath?: string;
   readonly clock?: Clock;
+  readonly maxTotalRows?: number;
 };
 
 /**
@@ -106,16 +118,43 @@ export async function createDemoApp(options: DemoAppOptions = {}): Promise<DemoA
   const chunks = await loadFixtureCorpus(options.corpusDir ?? "corpus-fixtures");
   const provider = new EvidenceExtractProvider();
   const limiter = new RateLimiter(clock);
+  const maxTotalRows = options.maxTotalRows ?? demoMaxTotalRows;
+
+  // ask() and replay() are the only paths that append, so this counter tracks the ledger length
+  // exactly, without an O(n) scan per request. It drives two things: the capacity ceiling, and a
+  // verification cache. Re-verifying the whole Ed25519 chain on every page render is an
+  // unauthenticated O(n) cost a GET flood can trigger; caching it and recomputing only after a
+  // write keeps a read O(1).
+  let rowCount = ledger.entries().length;
+  let cachedVerification: LedgerVerification | null = null;
+  let verifiedAtRow = -1;
+  const verify = (): LedgerVerification => {
+    if (cachedVerification === null || verifiedAtRow !== rowCount) {
+      cachedVerification = ledger.verifyRows();
+      verifiedAtRow = rowCount;
+    }
+    return cachedVerification;
+  };
+
   return {
     ledger,
     chunks,
     providerProfile: provider.profile,
     examples: demoExamples,
-    ask: (query) => ask(ledger, chunks, provider, query),
-    replay: (entryId) => replay(ledger, provider, entryId),
+    ask: (query) => {
+      const answer = ask(ledger, chunks, provider, query);
+      rowCount += 1;
+      return answer;
+    },
+    replay: (entryId) => {
+      const replayed = replay(ledger, provider, entryId);
+      rowCount += 1;
+      return replayed;
+    },
     replayable: (entryId) => replayable(ledger, entryId),
     entryById: (entryId) => ledger.findById(entryId),
-    verify: () => ledger.verifyRows(),
+    atCapacity: () => rowCount >= maxTotalRows,
+    verify,
     allow: (clientKey) => limiter.allow(clientKey),
   };
 }
