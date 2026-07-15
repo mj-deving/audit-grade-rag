@@ -55,7 +55,11 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   severity label, and an advisory whose severity cannot be established at all is flagged rather
   than passed; CI treats any osv-scanner exit other than 0/1 as an infra failure. CI-run
   caveat: the gate logic is unit-verified; the osv-scanner invocation itself proves on the
-  first CI run of this branch.
+  first CI run of this branch. First real run flagged two HIGH advisories already on main: hono
+  (CVSS 7.1, shipped web framework) was bumped to 4.12.30; the vite dev-server advisory
+  (GHSA-fx2h-pf6j-xcff, dev/test-only, not on the shipped Linux surface, vitest 4.1.5 pins the
+  vulnerable version) is a fail-closed triage allowlist entry in `osv-gate.ts` with a reason and
+  a 2026-10-15 review date. `partitionFindings` blocks any advisory not on that list.
 - [ ] H-5 (Alerting): a health and error-rate alert fires without a user reporting the break.
   Falsifier: no alert wired; a downed container is learned from a visitor.
 - [ ] H-6 (Data durability): an automated backup of the ledger and Postgres exists with a

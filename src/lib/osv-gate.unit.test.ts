@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { highOrCriticalFindings } from "./osv-gate.js";
+import { highOrCriticalFindings, partitionFindings } from "./osv-gate.js";
 
 const critical = {
   results: [
@@ -131,5 +131,35 @@ describe("highOrCriticalFindings — vulnerabilities without a groups array", ()
     const findings = highOrCriticalFindings(pkgWith([{ id: "GHSA-ng-opaque" }]));
     expect(findings).toHaveLength(1);
     expect(findings[0]?.severity).toContain("fail-closed");
+  });
+});
+
+describe("partitionFindings — triage allowlist", () => {
+  const finding = (pkg: string, vulnerability: string) => ({
+    package: pkg,
+    vulnerability,
+    severity: "CVSS 8.2",
+  });
+
+  it("routes an allowlisted advisory to triaged, not blocking", () => {
+    const { blocking, triaged } = partitionFindings([
+      finding("vite@8.0.11", "GHSA-fx2h-pf6j-xcff"),
+    ]);
+    expect(blocking).toHaveLength(0);
+    expect(triaged).toHaveLength(1);
+    expect(triaged[0]?.reviewBy).toBe("2026-10-15");
+  });
+
+  it("keeps a non-allowlisted HIGH advisory blocking", () => {
+    const { blocking, triaged } = partitionFindings([finding("evil@1.0.0", "GHSA-not-listed")]);
+    expect(blocking).toHaveLength(1);
+    expect(triaged).toHaveLength(0);
+  });
+
+  it("still blocks a bundle that mixes a triaged id with a non-triaged one", () => {
+    const { blocking } = partitionFindings([
+      finding("mixed@1.0.0", "GHSA-fx2h-pf6j-xcff, GHSA-not-listed"),
+    ]);
+    expect(blocking).toHaveLength(1);
   });
 });
