@@ -101,3 +101,35 @@ describe("highOrCriticalFindings — no-CVSS label fallback", () => {
     expect(findings[0]?.severity).toContain("fail-closed");
   });
 });
+
+describe("highOrCriticalFindings — vulnerabilities without a groups array", () => {
+  const pkgWith = (vulnerabilities: unknown) => ({
+    results: [
+      {
+        packages: [{ package: { name: "no-groups", version: "1.0.0" }, vulnerabilities }],
+      },
+    ],
+  });
+
+  it("flags a HIGH-labelled vulnerability that osv reported with no group summary", () => {
+    const findings = highOrCriticalFindings(
+      pkgWith([{ id: "GHSA-ng-high", database_specific: { severity: "CRITICAL" } }]),
+    );
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.severity).toContain("CRITICAL");
+  });
+
+  it("does not flag LOW-only vulnerabilities with no group summary", () => {
+    expect(
+      highOrCriticalFindings(
+        pkgWith([{ id: "GHSA-ng-low", database_specific: { severity: "LOW" } }]),
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("fails closed on a vulnerability with no establishable label and no group", () => {
+    const findings = highOrCriticalFindings(pkgWith([{ id: "GHSA-ng-opaque" }]));
+    expect(findings).toHaveLength(1);
+    expect(findings[0]?.severity).toContain("fail-closed");
+  });
+});

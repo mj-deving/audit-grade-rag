@@ -64,6 +64,14 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
 - [ ] H-7 (Reliability SLO): a written, measured success target (p95 latency and success
   rate) exists and is measured against the running deploy. Falsifier: a target with no
   measurement, or no target at all.
+- [ ] H-8 (DDL vs fault-tolerance timeout): schema and index DDL (notably the HNSW build) is
+  not governed by the short pool `statement_timeout`/`query_timeout`, so a one-time index
+  build on a populated table cannot fail as if it were a slow runtime query. Falsifier:
+  `CREATE INDEX ... USING hnsw` on a populated `corpus_chunks` exceeds the pool timeout and
+  `ensureSchema()` fails. Deferred from wave 1 (Forge audit NF-2, low live exposure: the index
+  is built `IF NOT EXISTS` against an empty table and filled by fast incremental inserts). Fix
+  path: lift the timeout for the DDL transaction only (`SET LOCAL statement_timeout = 0` plus a
+  per-query `query_timeout` override), verified against a real Postgres.
 
 ## Test strategy
 
