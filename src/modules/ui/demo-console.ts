@@ -258,7 +258,7 @@ function footer(): string {
   return `
     <footer>
       Portfolio-Demo, öffentlich und ohne Anmeldung. Die Operator-Konsole bleibt passkey-geschützt.
-      Lizenz BSL 1.1. <a href="${repoUrl}">${repoUrl}</a>
+      Lizenz Apache-2.0. <a href="${repoUrl}">${repoUrl}</a>
     </footer>`;
 }
 

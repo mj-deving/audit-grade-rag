@@ -281,4 +281,4 @@ proves bit-equal replay support.
 
 ## License
 
-This repository is currently `UNLICENSED`.
+Licensed under the [Apache License 2.0](LICENSE).
