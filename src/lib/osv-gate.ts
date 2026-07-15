@@ -39,31 +39,84 @@ export function highOrCriticalFindings(report: unknown): readonly OsvFinding[] {
   return findings;
 }
 
+const highSeverityLabels = new Set(["HIGH", "CRITICAL"]);
+
 function collectPackageFindings(pkg: unknown, findings: OsvFinding[]): void {
   if (!isObject(pkg)) {
     return;
   }
   const name = packageName(pkg["package"]);
+  const labelsById = severityLabelsById(pkg["vulnerabilities"]);
   const groups = pkg["groups"];
   if (!Array.isArray(groups)) {
     return;
   }
   for (const group of groups) {
-    if (!isObject(group)) {
-      continue;
-    }
-    const rawSeverity = group["max_severity"];
-    const cvss = typeof rawSeverity === "string" ? Number.parseFloat(rawSeverity) : Number.NaN;
-    if (Number.isFinite(cvss) && cvss >= highSeverityCvssFloor) {
-      const rawIds = group["ids"];
-      const ids = Array.isArray(rawIds) ? rawIds.filter(isString) : [];
-      findings.push({
-        package: name,
-        vulnerability: ids.join(", ") || "unknown",
-        severity: `CVSS ${cvss.toFixed(1)}`,
-      });
+    const finding = evaluateGroup(group, name, labelsById);
+    if (finding !== null) {
+      findings.push(finding);
     }
   }
+}
+
+function evaluateGroup(
+  group: unknown,
+  name: string,
+  labelsById: ReadonlyMap<string, string>,
+): OsvFinding | null {
+  if (!isObject(group)) {
+    return null;
+  }
+  const ids = idsOf(group["ids"]);
+  const rawSeverity = group["max_severity"];
+  const cvss =
+    typeof rawSeverity === "string" && rawSeverity.length > 0
+      ? Number.parseFloat(rawSeverity)
+      : Number.NaN;
+  if (Number.isFinite(cvss)) {
+    // CVSS is established: flag only at/above the floor, otherwise it is provably below.
+    return cvss >= highSeverityCvssFloor
+      ? { package: name, vulnerability: label(ids), severity: `CVSS ${cvss.toFixed(1)}` }
+      : null;
+  }
+  // No parseable CVSS (e.g. GHSA malware advisories carry only a severity label). Fall back to
+  // the label; if severity cannot be established at all, FAIL CLOSED rather than pass a
+  // possibly-high advisory through a gate that could not read it.
+  const labels = ids.map((id) => labelsById.get(id)).filter(isString);
+  const highLabels = labels.filter((entry) => highSeverityLabels.has(entry));
+  if (highLabels.length > 0) {
+    return { package: name, vulnerability: label(ids), severity: highLabels.join("/") };
+  }
+  if (labels.length === 0) {
+    return { package: name, vulnerability: label(ids), severity: "unknown (fail-closed)" };
+  }
+  return null;
+}
+
+function severityLabelsById(vulnerabilities: unknown): Map<string, string> {
+  const map = new Map<string, string>();
+  if (!Array.isArray(vulnerabilities)) {
+    return map;
+  }
+  for (const vuln of vulnerabilities) {
+    if (!isObject(vuln)) {
+      continue;
+    }
+    const id = vuln["id"];
+    const dbSpecific = vuln["database_specific"];
+    if (isString(id) && isObject(dbSpecific) && isString(dbSpecific["severity"])) {
+      map.set(id, dbSpecific["severity"].toUpperCase());
+    }
+  }
+  return map;
+}
+
+function idsOf(rawIds: unknown): readonly string[] {
+  return Array.isArray(rawIds) ? rawIds.filter(isString) : [];
+}
+
+function label(ids: readonly string[]): string {
+  return ids.join(", ") || "unknown";
 }
 
 function packageName(value: unknown): string {

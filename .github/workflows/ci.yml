@@ -79,11 +79,19 @@ jobs:
       - name: Install
         run: pnpm install --frozen-lockfile
       # pnpm audit targets an npm endpoint that now returns 410, so scan the lockfile with
-      # osv-scanner (pinned image) and gate on HIGH/CRITICAL only. The `|| true` lets our
-      # severity gate own the pass/fail decision rather than osv-scanner's fail-on-any exit.
+      # osv-scanner (pinned image) and gate on HIGH/CRITICAL only. osv-scanner exits 0 (no
+      # vulns) or 1 (vulns found) on a successful scan; any other exit is an infra/parse
+      # failure and must fail the job rather than pass with an empty report (fail closed).
       - name: Scan lockfile with osv-scanner
         run: |
+          set +e
           docker run --rm -v "${{ github.workspace }}:/src" ghcr.io/google/osv-scanner:v1.9.2 \
-            --lockfile=/src/pnpm-lock.yaml --format=json --output=/src/osv.json || true
+            --lockfile=/src/pnpm-lock.yaml --format=json --output=/src/osv.json
+          code=$?
+          set -e
+          if [ "$code" -ne 0 ] && [ "$code" -ne 1 ]; then
+            echo "osv-scanner failed with exit $code (not a vuln result); failing closed" >&2
+            exit "$code"
+          fi
       - name: Gate on HIGH/CRITICAL advisories
         run: pnpm exec tsx scripts/osv-check.ts osv.json
