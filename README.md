@@ -2,7 +2,7 @@
 
 # Audit-Grade RAG
 
-**Self-hosted RAG that can answer, cite, replay, and report every response.**
+**Self-hosted RAG where every answer is cited, signed into a hash chain, and replayable byte-for-byte.**
 
 [![CI](https://github.com/mj-deving/audit-grade-rag/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/mj-deving/audit-grade-rag/actions/workflows/ci.yml)
 ![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6?logo=typescript&logoColor=white)
@@ -12,25 +12,21 @@
 ![Audit](https://img.shields.io/badge/audit-ledger_signed-111827)
 ![Analytics](https://img.shields.io/badge/analytics-none-b91c1c)
 
-[Five-minute install](#five-minute-install) · [Screenshots](#screenshots) · [Architecture](#architecture) · [Verification](#verification) · [Docs](#docs)
+**[Live demo](https://audit-grade-rag-demo.mjdeving.com/demo)** · [What it does](#why-this-exists) · [Architecture](#architecture) · [Verification](#verification) · [Run it locally](#five-minute-install)
 
 </div>
 
-Audit-Grade RAG is a TypeScript system for organizations that need more than a
-chatbot UI. It treats every answer as an auditable event:
-retrieved evidence is captured, claims are citation-checked, ledger rows are
-hash-chained and signed, replay drift is named, and Article 50 report bundles
-are reproducible from local state.
-
-The local development profile runs with deterministic provider settings. No
-cloud credentials, no third-party JavaScript, and no analytics are needed to
-try the product surface.
-
-## Screenshots
+**[Try the live demo](https://audit-grade-rag-demo.mjdeving.com/demo).** Ask a question about Article 50 of the EU AI Act, read the cited answer, then open the Ed25519-signed audit row it wrote and replay it byte-for-byte. Public, no login; the operator console stays passkey-gated on its own hostname.
 
 <p align="center">
-  <img src="docs/assets/console-desktop.png" alt="Audit-Grade RAG desktop operator console" width="900">
+  <a href="https://audit-grade-rag-demo.mjdeving.com/demo"><img src="docs/screenshot.png" alt="The public demo: a cited answer to an Article 50 question above the Ed25519-signed audit row that recorded it" width="900"></a>
 </p>
+
+Audit-Grade RAG treats every answer as an auditable event: the retrieved evidence is kept, each
+claim is checked against its citation, ledger rows are hash-chained and Ed25519-signed, replay names
+five kinds of drift, and an EU AI Act Article 50 report bundle rebuilds from local state. The local
+profile is deterministic, so the eval and replay gates in [Verification](#verification) run with no
+cloud credentials and no third-party JavaScript.
 
 ## Why This Exists
 
@@ -235,6 +231,15 @@ pnpm build
 tests, build-backed e2e, and the eval harness.
 
 The CI workflow runs the same full gate on push and pull request.
+
+### What is verified
+
+- Golden eval on the Article 50 corpus: groundedness 1.0, citation accuracy 1.0, refusal correctness
+  1.0 against thresholds of 0.95 / 0.95 / 0.90, five tags green.
+- Test suite: 28 unit and 27 integration tests green; typecheck, Biome, ESLint, and knip clean.
+- Live demo verified in a real browser on 2026-07-15: a cited answer, the Ed25519-signed audit row it
+  wrote, byte-for-byte replay of that row, and the operator routes returning 404 on the public demo
+  hostname.
 
 ## Docker Compose
 
