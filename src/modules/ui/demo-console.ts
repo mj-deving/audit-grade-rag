@@ -263,7 +263,18 @@ function footer(): string {
 }
 
 function row(label: string, value: string, dim = false): string {
-  return `<dt>${escapeHtml(label)}</dt><dd${dim ? ' class="dim"' : ""}>${escapeHtml(value)}</dd>`;
+  return `<dt>${escapeHtml(label)}</dt><dd${dim ? ' class="dim"' : ""}>${protectProvenance(escapeHtml(value))}</dd>`;
+}
+
+/**
+ * A provenance value like "deterministic-extractive@1.0.0" matches an email pattern, so a CDN email
+ * obfuscator (Cloudflare Scrape Shield sits in front of this demo) rewrites it to "[email protected]"
+ * and destroys the very field the audit row exists to show. The `<!--email_off-->` wrapper is the
+ * CDN-sanctioned opt-out. Audit-row values are machine provenance and never emails, so protect any
+ * that could be mistaken for one. Keyed on "@" so it covers the whole class, not just today's two.
+ */
+function protectProvenance(html: string): string {
+  return html.includes("@") ? `<!--email_off-->${html}<!--/email_off-->` : html;
 }
 
 function page(body: string): string {

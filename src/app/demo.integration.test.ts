@@ -43,15 +43,6 @@ describe("public demo route", () => {
     expect(await response.text()).toContain("refused-out-of-corpus");
   });
 
-  it("matches a question typed with real umlauts against the transliterated corpus", async () => {
-    const response = await get(
-      `/demo?q=${encodeURIComponent("Wie müssen synthetische Inhalte gekennzeichnet werden?")}`,
-    );
-    const html = await response.text();
-    expect(html).toContain("art50-marking");
-    expect(html).not.toContain("refused-out-of-corpus");
-  });
-
   it("replays a ledger row byte-for-byte and verifies the whole chain", async () => {
     const entry = demo.ask("Wie muessen KI-Ausgaben gekennzeichnet werden?").entry;
     const response = await app.fetch(
@@ -70,6 +61,32 @@ describe("public demo route", () => {
   it("caps an over-long query instead of ledgering it", async () => {
     const response = await get(`/demo?q=${"a".repeat(5000)}`);
     expect(response.status).toBe(400);
+  });
+});
+
+describe("the demo renders correct German and keeps provenance strings intact", () => {
+  it("matches umlaut and transliterated spellings alike, and renders the corpus with real umlauts", async () => {
+    const response = await get(
+      `/demo?q=${encodeURIComponent("Wie müssen synthetische Inhalte gekennzeichnet werden?")}`,
+    );
+    const html = await response.text();
+    expect(html).toContain("art50-marking");
+    expect(html).not.toContain("refused-out-of-corpus");
+    // The corpus stores correct German now, so the rendered evidence carries real umlauts.
+    expect(html).toContain("künstlich");
+    expect(html).not.toContain("kuenstlich");
+  });
+
+  it("shields @-shaped provenance values from CDN email obfuscation", async () => {
+    const html = await (
+      await get(
+        `/demo?q=${encodeURIComponent("Wie müssen synthetische Inhalte gekennzeichnet werden?")}`,
+      )
+    ).text();
+    // The audit row shows model + retrieval versions like "deterministic-extractive@1.0.0". Wrapped in
+    // <!--email_off--> so Cloudflare's Scrape Shield leaves them intact instead of masking them.
+    expect(html).toContain("<!--email_off-->");
+    expect(html).toMatch(/<!--email_off-->[^<]*@[^<]*<!--\/email_off-->/);
   });
 });
 

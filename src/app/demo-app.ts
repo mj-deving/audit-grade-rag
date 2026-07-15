@@ -100,8 +100,8 @@ export type DemoAppOptions = {
 };
 
 /**
- * Questions worded to match the corpus. `foldGerman` lets these carry real umlauts even though the
- * fixture stores Article 50 transliterated. The last one has no answer in the corpus on purpose:
+ * Questions worded to match the corpus. `foldGerman` keeps retrieval umlaut-agnostic, so these match
+ * whether typed with umlauts or transliterated. The last one has no answer in the corpus on purpose:
  * the demo has to be able to show a refusal, not only a hit.
  */
 const demoExamples: readonly string[] = [
