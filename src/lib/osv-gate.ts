@@ -12,6 +12,53 @@ type OsvFinding = {
   readonly severity: string;
 };
 
+// Triaged advisories: HIGH/CRITICAL findings reviewed and accepted as not applicable to this
+// project. This is a fail-closed allowlist keyed on the exact advisory id, NOT a severity
+// relaxation — anything not listed here still fails the gate. Each entry carries a reason and a
+// review-by date so the acceptance is auditable and expires.
+const triagedAdvisories = new Map<string, { readonly reason: string; readonly reviewBy: string }>([
+  [
+    "GHSA-fx2h-pf6j-xcff",
+    {
+      reason:
+        "vite dev-server fs.deny bypass on Windows alternate paths. Dev/test tooling only, not in " +
+        "the shipped artifact; the deploy is Linux and never runs the vite dev server. vitest 4.1.5 " +
+        "pins vite 8.0.11; a clean bump requires a vitest upgrade, tracked separately.",
+      reviewBy: "2026-10-15",
+    },
+  ],
+]);
+
+export type PartitionedFindings = {
+  readonly blocking: readonly OsvFinding[];
+  readonly triaged: readonly TriagedFinding[];
+};
+
+type TriagedFinding = OsvFinding & { readonly reason: string; readonly reviewBy: string };
+
+// Splits gate findings into blocking vs triaged-and-accepted. A finding is triaged only when
+// EVERY advisory id it names is allowlisted; a bundle mixing a triaged id with a non-triaged one
+// still blocks, so an allowlist entry can never hide an un-reviewed advisory.
+export function partitionFindings(findings: readonly OsvFinding[]): PartitionedFindings {
+  const blocking: OsvFinding[] = [];
+  const triaged: TriagedFinding[] = [];
+  for (const finding of findings) {
+    const ids = finding.vulnerability.split(",").map((entry) => entry.trim());
+    const entries = ids.map((id) => triagedAdvisories.get(id));
+    const firstEntry = entries[0];
+    if (
+      ids.length > 0 &&
+      firstEntry !== undefined &&
+      entries.every((entry) => entry !== undefined)
+    ) {
+      triaged.push({ ...finding, reason: firstEntry.reason, reviewBy: firstEntry.reviewBy });
+    } else {
+      blocking.push(finding);
+    }
+  }
+  return { blocking, triaged };
+}
+
 // Returns HIGH/CRITICAL findings in an osv-scanner JSON report. Shape is defensive: the
 // report is untrusted tool output, so every level is type-guarded and unknown shapes yield
 // no findings (the scanner's own non-zero exit still surfaces infra failures separately).

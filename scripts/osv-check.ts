@@ -1,8 +1,10 @@
 import { readFileSync } from "node:fs";
-import { highOrCriticalFindings } from "../src/lib/osv-gate.js";
+import { highOrCriticalFindings, partitionFindings } from "../src/lib/osv-gate.js";
 
 // CI entrypoint for the supply-chain gate (H-4). Reads an osv-scanner JSON report and exits
-// non-zero when any HIGH/CRITICAL advisory is present. Usage: tsx scripts/osv-check.ts <report.json>
+// non-zero when any un-triaged HIGH/CRITICAL advisory is present. Triaged advisories (reviewed
+// and accepted, see src/lib/osv-gate.ts) are logged but do not fail the build.
+// Usage: tsx scripts/osv-check.ts <report.json>
 function main(): void {
   const reportPath = process.argv[2];
   if (reportPath === undefined) {
@@ -16,13 +18,18 @@ function main(): void {
     process.stderr.write(`osv-check: could not read report at ${reportPath}: ${String(error)}\n`);
     process.exit(2);
   }
-  const findings = highOrCriticalFindings(report);
-  if (findings.length === 0) {
-    process.stdout.write("osv-check: no HIGH/CRITICAL advisories\n");
+  const { blocking, triaged } = partitionFindings(highOrCriticalFindings(report));
+  for (const finding of triaged) {
+    process.stdout.write(
+      `osv-check: TRIAGED (accepted until ${finding.reviewBy}) ${finding.package}: ${finding.vulnerability} (${finding.severity})\n`,
+    );
+  }
+  if (blocking.length === 0) {
+    process.stdout.write("osv-check: no un-triaged HIGH/CRITICAL advisories\n");
     return;
   }
-  process.stderr.write(`osv-check: ${String(findings.length)} HIGH/CRITICAL advisory(ies):\n`);
-  for (const finding of findings) {
+  process.stderr.write(`osv-check: ${String(blocking.length)} HIGH/CRITICAL advisory(ies):\n`);
+  for (const finding of blocking) {
     process.stderr.write(
       `  - ${finding.package}: ${finding.vulnerability} (${finding.severity})\n`,
     );
