@@ -6,3 +6,5 @@ coverage/
 !.env.example
 *.log
 .live-cache/
+.audit-grade-rag-mcp-passkey.json
+mcp-passkey.json
