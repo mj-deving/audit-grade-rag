@@ -46,9 +46,17 @@ function collectPackageFindings(pkg: unknown, findings: OsvFinding[]): void {
     return;
   }
   const name = packageName(pkg["package"]);
-  const labelsById = severityLabelsById(pkg["vulnerabilities"]);
+  const vulnerabilities = pkg["vulnerabilities"];
+  const labelsById = severityLabelsById(vulnerabilities);
   const groups = pkg["groups"];
-  if (!Array.isArray(groups)) {
+  if (!Array.isArray(groups) || groups.length === 0) {
+    // osv reported vulnerabilities but no group summary; evaluate the raw vulnerability labels
+    // directly so a HIGH/CRITICAL is never dropped, and fail closed when a vulnerability's
+    // severity cannot be established. A group summary is a convenience, not a precondition.
+    const finding = findingFromVulnerabilities(name, vulnerabilities, labelsById);
+    if (finding !== null) {
+      findings.push(finding);
+    }
     return;
   }
   for (const group of groups) {
@@ -57,6 +65,29 @@ function collectPackageFindings(pkg: unknown, findings: OsvFinding[]): void {
       findings.push(finding);
     }
   }
+}
+
+function findingFromVulnerabilities(
+  name: string,
+  vulnerabilities: unknown,
+  labelsById: ReadonlyMap<string, string>,
+): OsvFinding | null {
+  if (!Array.isArray(vulnerabilities) || vulnerabilities.length === 0) {
+    return null;
+  }
+  const ids = vulnerabilities
+    .map((vuln) => (isObject(vuln) && isString(vuln["id"]) ? vuln["id"] : null))
+    .filter(isString);
+  const labels = ids.map((id) => labelsById.get(id)).filter(isString);
+  const highLabels = labels.filter((entry) => highSeverityLabels.has(entry));
+  if (highLabels.length > 0) {
+    return { package: name, vulnerability: label(ids), severity: highLabels.join("/") };
+  }
+  // Some vulnerability carried no establishable severity label: fail closed.
+  if (labels.length < ids.length) {
+    return { package: name, vulnerability: label(ids), severity: "unknown (fail-closed)" };
+  }
+  return null;
 }
 
 function evaluateGroup(
