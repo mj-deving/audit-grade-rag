@@ -1,6 +1,7 @@
-import { Pool, type PoolClient } from "pg";
+import type { Pool, PoolClient } from "pg";
 import type { CorpusChunk, CorpusSnapshot } from "../../domain/types.js";
 import { sha256Hex, stableId } from "../../lib/hash.js";
+import { createPgPool } from "../../lib/pg-pool.js";
 import type { Clock } from "../../lib/time.js";
 import { systemClock } from "../../lib/time.js";
 import type { AuditLedger } from "../audit/ledger.js";
@@ -44,7 +45,7 @@ export class PostgresIngestionStore {
   private schemaReady = false;
 
   constructor(private readonly options: PostgresIngestionStoreOptions) {
-    this.pool = options.pool ?? new Pool({ connectionString: options.databaseUrl });
+    this.pool = options.pool ?? createPgPool(options.databaseUrl);
     this.ownsPool = options.pool === undefined;
     this.embeddingProvider = options.embeddingProvider ?? requireConfiguredEmbeddingProvider();
   }
