@@ -80,19 +80,39 @@ describe("corpus provenance", () => {
     // Öffentlichkeit zur Anzeige einer Straftat zur Verfügung") was dropped. Verbatim text minus a
     // clause is still a misrepresentation of the law, and it would sail through the substring test.
     //
-    // So the chunks must reconstruct the snapshot exactly: concatenated in file order they equal
-    // the source, less the "(N)" paragraph markers that chunk boundaries replace. That makes the
-    // corpus the source rather than a selection from it.
+    // So the chunks must account for the whole snapshot: every one of them found in order, with
+    // only paragraph markers between them. That makes the corpus the source rather than a
+    // selection from it.
     for (const path of await fixtureFiles()) {
       const slug = basename(path, ".md");
       const snapshot = normalize(await readFile(join(sourcesDir, `${slug}.source.txt`), "utf8"));
-      const withoutParagraphMarkers = normalize(snapshot.replace(/\(\d+\)\s*/gu, " "));
-      const rejoined = [...chunksOf(await readFile(path, "utf8")).values()]
-        .map(normalize)
-        .join(" ");
-      expect(rejoined, `${slug}: chunks do not reconstruct the source`).toBe(
-        withoutParagraphMarkers,
-      );
+      // Walk the snapshot consuming each chunk at its own position, in order, and require that the
+      // only thing ever left between two chunks is a paragraph marker.
+      //
+      // The earlier version compared against the snapshot with /\(\d+\)\s*/g deleted globally. That
+      // was a content-deletion rule masquerading as a parser: it also erased any legitimate in-text
+      // "(2)" from BOTH sides, so dropping such a token from a chunk would have gone unnoticed.
+      // Article 50 happens to contain none, which is luck, not a guarantee — Article 5 enumerates
+      // exceptions. Consuming positionally never deletes from the expected side, so a gap that is
+      // not exactly a paragraph marker fails here.
+      let cursor = 0;
+      for (const [id, text] of chunksOf(await readFile(path, "utf8"))) {
+        const chunkText = normalize(text);
+        const at = snapshot.indexOf(chunkText, cursor);
+        expect(
+          at,
+          `${slug}/${id}: not found in source at or after the previous chunk`,
+        ).toBeGreaterThanOrEqual(0);
+        const gap = snapshot.slice(cursor, at);
+        expect(gap, `${slug}/${id}: source text between chunks is unaccounted for`).toMatch(
+          /^\s*(\(\d+\)\s*)?$/u,
+        );
+        cursor = at + chunkText.length;
+      }
+      expect(
+        snapshot.slice(cursor).trim(),
+        `${slug}: source text after the last chunk is dropped`,
+      ).toBe("");
     }
   });
 

@@ -14,12 +14,17 @@ Thresholds are groundedness `0.95`, citation accuracy `0.95`, and refusal correc
 `pnpm eval` exits non-zero when any threshold is missed or the golden set is empty. `pnpm check:full`
 runs the eval harness.
 
-The default pinned tuple for `pnpm eval` is:
+The default pinned tuple for `pnpm eval` is, as `pnpm eval` reports it:
 
-- model: `stub-llm@1.0.0`
-- prompt: `eval-prompt@1.0.0`
-- embedding model: `bge-m3@local-1024-v1`
+- model: `eval-cited-provider@1.0.0`
+- prompt: `1.0.0`
+- embedding model: `bge-m3@1024-v1`
 - corpus snapshot: `corpus-fixtures:v1`
+
+The `bge-m3` entry is a label, not a description of the eval path: no embedding is computed here (see
+above). `corpusSnapshotHash` is currently `sha256("corpus-fixtures:v1")` — a hash of that label, not
+of the corpus. It cannot be recomputed from the source snapshot and does not move when the corpus
+changes. Tracked as H-12 in `docs/HARDENING.md`.
 
 ## What this harness measures — and what it does not
 

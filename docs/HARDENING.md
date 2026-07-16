@@ -67,6 +67,33 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   caught in this change's own first draft).
   Caveat: over 14 chunks the same question still lands near `0.19`. Refused, but the margin is
   corpus-size-dependent; it widens as the corpus grows, which is the opposite of the old behaviour.
+- [ ] H-13 (The required check is not load-flaky): no unit test spawns a subprocess under the unit
+  project's 5s default timeout. Falsifier: run `pnpm check:fast` under CPU contention and watch a
+  timeout fail the build.
+  Open, pre-existing. Surfaced by the cross-vendor audit, which saw
+  `acceptance.eval-report-ui-security.unit.test.ts:101` and `:137` time out at 5000ms while running
+  concurrently with other work. Both pass here — measured at 2194ms and 2056ms, green in 6 of 6
+  runs — so the "check:full green" claims on this wave's commits hold. But they shell out to
+  `pnpm eval` and `pnpm report` inside the *unit* project, leaving ~2.3x margin on a 5s default,
+  which is not enough for a required status check on a shared runner. Fix path: move them to the
+  integration project (30s timeout, already used for exactly this kind of test) or give them an
+  explicit timeout.
+- [ ] H-12 (The ledger attests the corpus, not its name): `corpusSnapshotHash` — carried by fixture
+  chunks, eval outcomes and every demo ledger row — is recomputable from the corpus it claims to
+  pin. Falsifier: change a byte of the corpus and the hash the ledger records does not move.
+  Open. Found by the cross-vendor audit (gpt-5.5 via `codex exec`, 2026-07-16); missed by both the
+  Claude executor and its own H-9 work. `src/modules/eval/eval.ts:65` sets
+  `fixtureCorpusSnapshotHash = sha256Hex(pinnedEvalTuple.corpusSnapshotId)`, so the hash is
+  `sha256("corpus-fixtures:v1") = 06f96f902c45…` — a hash of the label's own spelling. The demo
+  prints it as "Korpusstand: corpus-fixtures:v1 · 06f96f902c45" and the Ed25519 chain signs it. The
+  actual source snapshot hashes to `036d4f54d609…`, which appears nowhere in the ledger.
+  This is the seam H-9 does not reach: H-9 proves the fixture matches its snapshot, but the chain
+  from snapshot to signed ledger row is a constant, so a third party cannot verify the corpus from
+  the artefact the product exists to produce. Pre-existing, not introduced by this wave, and the
+  most load-bearing open item on the thesis — a hash-chained ledger attesting a string literal is
+  the failure mode the whole project is a rebuttal to.
+  Fix path: derive the hash from a canonical manifest over the source snapshots' SHA-256 values and
+  thread it through `loadFixtureCorpus`, eval, and the demo ledger rows.
 - [ ] H-11 (The eval measures retrieval, not vocabulary): the golden set is answerable by the eval's
   retrieval path without being written in the corpus's exact inflections. Falsifier: rewording a
   case into natural German that a competent reader would use flips it from answered to refused.
