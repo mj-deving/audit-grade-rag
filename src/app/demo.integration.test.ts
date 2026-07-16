@@ -44,7 +44,13 @@ describe("public demo route", () => {
   });
 
   it("replays a ledger row byte-for-byte and verifies the whole chain", async () => {
-    const entry = demo.ask("Wie muessen KI-Ausgaben gekennzeichnet werden?").entry;
+    // This test is about replay, so it just needs an answered row. It used to ask "Wie muessen
+    // KI-Ausgaben gekennzeichnet werden?", which retrieval cannot actually see: the corpus says
+    // "Ausgaben", the question says the compound "KI-Ausgaben", and this path does no decompounding
+    // (H-11). It scored 0.273 and is refused on the evidence. It only ever passed because the old
+    // additive bm25 length bonus carried it over the 0.3 line — the same artifact that answered a
+    // banking question with AI-Act text (H-10). Third question found propped up by that bonus.
+    const entry = demo.ask("Wie muessen synthetische Inhalte gekennzeichnet werden?").entry;
     const response = await app.fetch(
       new Request("http://demo.local/demo/replay", {
         method: "POST",

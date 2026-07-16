@@ -84,8 +84,8 @@ export function reciprocalRankFusion(
 // words in common with the corpus still scored on German stopwords alone: "Welche Eigenkapitalquote
 // verlangt die CRR fuer Sparkassen im Jahr 2030?" matched only "die", "fuer" and "im" and scored
 // exactly 0.300 against the 0.3 out-of-corpus threshold — the refusal the demo promises was being
-// decided by stopwords, and it got weaker as chunks got longer. Weighting by IDF drives such a
-// question to ~0 because its unmatched content words dominate the denominator.
+// decided by stopwords, and it got weaker as chunks got longer. Weighting by IDF makes such a
+// question's unmatched content words dominate the denominator.
 export type CorpusTermWeights = {
   readonly idf: ReadonlyMap<string, number>;
   // Weight for a query term that appears in no chunk. Derived from the same corpus size as every
@@ -134,6 +134,16 @@ function rankCandidates(
 
 // IDF-weighted coverage of the query: the share of the query's *information* this chunk carries,
 // not the share of its words. Stays in [0,1], so the out-of-corpus threshold keeps its meaning.
+//
+// The known limit, measured rather than asserted (see the corpus-growth sweep in
+// retrieval.unit.test.ts). `base` is a ratio of IDF sums, and every IDF grows like ln(corpusSize)
+// when its document frequency stays put. So as a corpus grows with text that shares none of the
+// query's vocabulary, matched and unmatched weights grow together and `base` drifts up toward the
+// query's plain matched-TOKEN fraction — the very unweighted count IDF was added to replace. For
+// the CRR question that fraction is 3/10, which sits exactly on the 0.3 threshold. IDF buys a large
+// margin at realistic corpus sizes and in a corpus of one language; it does not buy an asymptotic
+// guarantee. A corpus grown with alien vocabulary erodes it. That is a documented property of
+// coverage-ratio scoring, not a claim that it cannot happen.
 function scoreChunk(
   queryTerms: readonly string[],
   chunk: CorpusChunk,
@@ -160,8 +170,18 @@ function scoreChunk(
     return 0;
   }
   const base = matchedWeight / queryWeight;
-  const lengthBonus =
-    method === "bm25" ? Math.min(0.2, matchedWeight / Math.max(10, chunkTerms.size)) : 0;
+  // bm25 additionally prefers a chunk whose match is dense relative to its length. That preference
+  // is a MODIFIER on evidence and must never be evidence itself, so it scales with `base`: a chunk
+  // carrying none of the query's information earns no bonus, however short it is.
+  //
+  // It used to be an additive term, `min(0.2, matchedWeight/max(10, chunkLen))`, which never looked
+  // at the query at all. `matchedWeight` grows like ln(corpusSize), so the bonus saturated at its
+  // own 0.2 cap — two thirds of the 0.3 refusal threshold — handed out purely for matching
+  // stopwords. Measured: with 50 unrelated chunks added, the out-of-corpus CRR question scored
+  // 0.369 and was ANSWERED, citing Article 50 text as its evidence. `base` alone never crossed 0.3
+  // in that sweep; the bonus did it single-handed.
+  const density = Math.min(0.2, matchedWeight / Math.max(10, chunkTerms.size));
+  const lengthBonus = method === "bm25" ? base * density : 0;
   return roundScore(Math.min(1, base + lengthBonus));
 }
 

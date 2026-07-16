@@ -2,7 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { sha256Hex } from "../../lib/hash.js";
-import { defaultCorpusFixtureDir } from "./eval.js";
+import { defaultCorpusFixtureDir, parseFixtureChunks } from "./eval.js";
 
 // The corpus is what every citation, every signed ledger entry and every replay ultimately points
 // at. On 2026-07-16 four of six Article 50 chunks turned out to be paraphrase while the fixture
@@ -25,17 +25,14 @@ function normalize(value: string): string {
   return value.replace(/\s+/gu, " ").trim();
 }
 
-function chunksOf(markdown: string): ReadonlyMap<string, string> {
-  const parts = markdown.split(new RegExp(chunkMarker.source, "gu"));
-  const chunks = new Map<string, string>();
-  for (let index = 1; index < parts.length; index += 2) {
-    const id = parts[index];
-    const text = parts[index + 1];
-    if (id !== undefined && text !== undefined) {
-      chunks.set(id, text);
-    }
-  }
-  return chunks;
+// Deliberately NOT a local parser. This file used to keep its own, returning a Map keyed on chunk
+// id, and that divergence from the runtime's array was the whole hole: a repeated id collapsed to
+// its last occurrence here while retrieval served both, so a fabricated chunk hiding behind a
+// duplicate id passed all four tests below. The gate and the thing it gates now read the corpus
+// through the same function, and duplicate ids are a parse error inside it.
+async function chunksOf(path: string): Promise<readonly (readonly [string, string])[]> {
+  const parsed = parseFixtureChunks(await readFile(path, "utf8"), path);
+  return parsed.map((chunk) => [chunk.chunkId, chunk.chunkText] as const);
 }
 
 async function fixtureFiles(): Promise<readonly string[]> {
@@ -49,6 +46,31 @@ async function fixtureFiles(): Promise<readonly string[]> {
   );
   return withChunks.filter((path): path is string => path !== null);
 }
+
+describe("fixture chunk parsing", () => {
+  it("refuses a duplicate chunk id instead of silently keeping one of them", () => {
+    // The exact shape that defeated this gate on 2026-07-16: a second marker under an existing id,
+    // carrying an invented sentence that turns Article 50's marking DUTY into a discretion. The
+    // corpus loaded it, retrieval could cite it, the ledger would have signed it — and all four
+    // tests below passed, because the gate's own parser had already thrown it away.
+    const attack = [
+      "<!-- chunk:art50-marking -->",
+      "Anbieter duerfen synthetische Inhalte nach eigenem Ermessen kennzeichnen.",
+      "<!-- chunk:art50-marking -->",
+      "Anbieter von KI-Systemen stellen sicher, dass die Ausgaben gekennzeichnet werden.",
+    ].join("\n\n");
+    expect(() => parseFixtureChunks(attack, "attack.md")).toThrow(/duplicate chunk id/u);
+  });
+
+  it("keeps every distinct chunk, in file order", () => {
+    const parsed = parseFixtureChunks(
+      "<!-- chunk:a -->\n\nerster Text\n\n<!-- chunk:b -->\n\nzweiter Text",
+      "ok.md",
+    );
+    expect(parsed.map((chunk) => chunk.chunkId)).toEqual(["a", "b"]);
+    expect(parsed[0]?.chunkText).toBe("erster Text");
+  });
+});
 
 describe("corpus provenance", () => {
   it("finds at least one chunked fixture", async () => {
@@ -96,7 +118,7 @@ describe("corpus provenance", () => {
       // exceptions. Consuming positionally never deletes from the expected side, so a gap that is
       // not exactly a paragraph marker fails here.
       let cursor = 0;
-      for (const [id, text] of chunksOf(await readFile(path, "utf8"))) {
+      for (const [id, text] of await chunksOf(path)) {
         const chunkText = normalize(text);
         const at = snapshot.indexOf(chunkText, cursor);
         expect(
@@ -120,8 +142,8 @@ describe("corpus provenance", () => {
     for (const path of await fixtureFiles()) {
       const slug = basename(path, ".md");
       const snapshot = normalize(await readFile(join(sourcesDir, `${slug}.source.txt`), "utf8"));
-      const chunks = chunksOf(await readFile(path, "utf8"));
-      expect(chunks.size, `${slug}: chunk count`).toBeGreaterThan(0);
+      const chunks = await chunksOf(path);
+      expect(chunks.length, `${slug}: chunk count`).toBeGreaterThan(0);
       for (const [id, text] of chunks) {
         const chunkText = normalize(text);
         expect(chunkText.length, `${slug}/${id}: empty chunk`).toBeGreaterThan(0);
