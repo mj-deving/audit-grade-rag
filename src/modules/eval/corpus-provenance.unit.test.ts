@@ -1,8 +1,9 @@
-import { readdir, readFile } from "node:fs/promises";
+import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { sha256Hex } from "../../lib/hash.js";
-import { defaultCorpusFixtureDir, parseFixtureChunks } from "./eval.js";
+import { defaultCorpusFixtureDir, loadFixtureCorpus, parseFixtureChunks } from "./eval.js";
 
 // The corpus is what every citation, every signed ledger entry and every replay ultimately points
 // at. On 2026-07-16 four of six Article 50 chunks turned out to be paraphrase while the fixture
@@ -60,6 +61,23 @@ describe("fixture chunk parsing", () => {
       "Anbieter von KI-Systemen stellen sicher, dass die Ausgaben gekennzeichnet werden.",
     ].join("\n\n");
     expect(() => parseFixtureChunks(attack, "attack.md")).toThrow(/duplicate chunk id/u);
+  });
+
+  it("refuses a chunk id duplicated across two files, not just within one", async () => {
+    // The per-file check is not enough, and this is the case that actually breaks the product.
+    // Measured before the fix: two fixtures under one id — one harmless, one carrying fabricated
+    // banking text — got the out-of-corpus CRR question ANSWERED (the fabrication opened the gate)
+    // with the OTHER file's harmless sentence displayed as the evidence. `reciprocalRankFusion`
+    // keys on chunk id, so the two texts fused into one entry and the citation named a text that
+    // had not opened its own gate.
+    const dir = await mkdtemp(join(tmpdir(), "corpus-xfile-"));
+    try {
+      await writeFile(join(dir, "a.md"), "<!-- chunk:dup -->\n\nPflicht Alpha, harmlos.\n");
+      await writeFile(join(dir, "b.md"), "<!-- chunk:dup -->\n\nErfundener Bankentext.\n");
+      await expect(loadFixtureCorpus(dir)).rejects.toThrow(/duplicate chunk id "dup"/u);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it("keeps every distinct chunk, in file order", () => {

@@ -25,11 +25,17 @@ describe("public demo route", () => {
   });
 
   it("answers a question and renders the signed ledger row that recorded it", async () => {
+    // Asserting only that the page CONTAINS the evidence does not prove it was answered: the
+    // refusal page renders the rejected candidates too, so every `toContain` below passes on a
+    // refusal. This test asked "Wie muessen KI-Ausgaben gekennzeichnet werden?" and stayed green
+    // while the route refused it (H-11: the corpus says "Ausgaben", nothing splits the compound).
+    // So the outcome is now asserted explicitly, and the question is one retrieval can see.
     const response = await get(
-      `/demo?q=${encodeURIComponent("Wie muessen KI-Ausgaben gekennzeichnet werden?")}`,
+      `/demo?q=${encodeURIComponent("Wie muessen synthetische Inhalte gekennzeichnet werden?")}`,
     );
     const html = await response.text();
     expect(response.status).toBe(200);
+    expect(html).not.toContain("refused-out-of-corpus");
     expect(html).toContain("maschinenlesbaren Format");
     expect(html).toContain("art50-marking");
     expect(html).toContain("Ed25519");
