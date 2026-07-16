@@ -12,6 +12,7 @@ import type {
   ValidationError,
 } from "../../domain/types.js";
 import { sha256Hex, stableId } from "../../lib/hash.js";
+import { retryAsync } from "../../lib/resilience.js";
 import { defaultEmbeddingDimension, defaultEmbeddingModel } from "../ingest/embedding.js";
 import type { RetrievalTrace } from "../retrieval/retrieval.js";
 
@@ -94,9 +95,20 @@ export class AnthropicMessagesProvider implements LlmProvider {
   readonly profile: ProviderProfile;
   private readonly client: Anthropic;
 
-  constructor(options: { readonly apiKey: string; readonly model?: string }) {
+  constructor(options: {
+    readonly apiKey: string;
+    readonly model?: string;
+    readonly timeoutMs?: number;
+    readonly maxRetries?: number;
+  }) {
     const model = options.model ?? "claude-sonnet-4-6";
-    this.client = new Anthropic({ apiKey: options.apiKey });
+    // The SDK retries 429/5xx and connection errors with exponential backoff plus jitter;
+    // set the ceiling and the per-request timeout explicitly rather than leaning on defaults (H-2/H-3).
+    this.client = new Anthropic({
+      apiKey: options.apiKey,
+      timeout: options.timeoutMs ?? 60_000,
+      maxRetries: options.maxRetries ?? 3,
+    });
     this.profile = {
       id: "anthropic",
       name: "Anthropic Claude Messages API",
@@ -128,6 +140,7 @@ export class ClaudeCliJsonProvider implements LlmProvider {
   private readonly command: string;
   private readonly timeoutMs: number;
   private readonly maxBudgetUsd: string;
+  private readonly retries: number;
 
   constructor(
     options: {
@@ -135,12 +148,14 @@ export class ClaudeCliJsonProvider implements LlmProvider {
       readonly model?: string;
       readonly timeoutMs?: number;
       readonly maxBudgetUsd?: string;
+      readonly retries?: number;
     } = {},
   ) {
     const model = options.model ?? "claude-sonnet-4-6";
     this.command = options.command ?? "claude";
     this.timeoutMs = options.timeoutMs ?? 120_000;
     this.maxBudgetUsd = options.maxBudgetUsd ?? "1.00";
+    this.retries = options.retries ?? 2;
     this.profile = {
       id: "claude-cli-oauth",
       name: "Claude Code CLI OAuth",
@@ -152,25 +167,40 @@ export class ClaudeCliJsonProvider implements LlmProvider {
   }
 
   async generate(request: LlmRequest): Promise<string> {
-    const result = await execFileAsync(
-      this.command,
-      [
-        "-p",
-        "--output-format",
-        "json",
-        "--json-schema",
-        JSON.stringify(claudeCliAnswerSchema),
-        "--model",
-        this.profile.modelVersion,
-        "--max-budget-usd",
-        this.maxBudgetUsd,
-        "--no-session-persistence",
-        claudeCliPrompt(request),
-      ],
-      { encoding: "utf8", timeout: this.timeoutMs },
+    // A timed-out CLI invocation is a transient failure; retry it with backoff. A non-zero
+    // exit (bad prompt, budget exceeded) or a missing binary is deterministic and not retried.
+    const result = await retryAsync(
+      () =>
+        execFileAsync(
+          this.command,
+          [
+            "-p",
+            "--output-format",
+            "json",
+            "--json-schema",
+            JSON.stringify(claudeCliAnswerSchema),
+            "--model",
+            this.profile.modelVersion,
+            "--max-budget-usd",
+            this.maxBudgetUsd,
+            "--no-session-persistence",
+            claudeCliPrompt(request),
+          ],
+          { encoding: "utf8", timeout: this.timeoutMs },
+        ),
+      {
+        retries: this.retries,
+        baseDelayMs: 500,
+        maxDelayMs: 4_000,
+        isRetryable: isTimedOutProcess,
+      },
     );
     return readClaudeCliAnswer(result.stdout);
   }
+}
+
+function isTimedOutProcess(error: unknown): boolean {
+  return isObject(error) && (error as { readonly killed?: boolean }).killed === true;
 }
 
 export type GenerateOptions = {
