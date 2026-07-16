@@ -50,6 +50,20 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   Mutation-falsified three ways: the exact historical paraphrase re-inserted (caught), the snapshot
   edited while chunks stayed substrings (caught — only the hash sees that), and the counter-exception
   deleted with everything else left verbatim (caught only by reconstruction).
+
+  **Reopened and re-closed 2026-07-16: chunk ids had to become unique across the corpus.** The gate
+  above kept a `Map` keyed on chunk id while the runtime kept an array, so a repeated id collapsed
+  in the gate and survived in the corpus. Verified by injecting a second `<!-- chunk:art50-marking
+  -->` whose invented text turns Article 50's marking duty into a discretion: 15 chunks loaded, two
+  under that id, the fabrication citable and signable — all four tests green. Both now read the
+  corpus through one `parseFixtureChunks`.
+  The first fix was still too narrow, and the audit caught that too: it was per-FILE. Two files
+  each carrying `<!-- chunk:dup -->` — one harmless, one fabricated banking text — got the
+  out-of-corpus CRR question ANSWERED, because the fabrication opened the refusal gate while the
+  citation displayed the *other* file's sentence. `reciprocalRankFusion` keys on chunk id, so the
+  two texts fused into one entry. An answer whose gate was opened by text it does not cite is the
+  exact failure this project exists to make impossible. `loadFixtureCorpus` now rejects duplicate
+  ids across the whole corpus and names both files.
   Discovery: the fixture header and the public demo both claimed "Auszug aus Artikel 50 der
   EU-KI-Verordnung"; one chunk had widened an exception's scope from a single duty to all
   transparency duties and dropped a counter-exception outright. The demo string did not need
@@ -57,16 +71,88 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   Caveat: the snapshot is a mirror's rendering, not the Official Journal. EUR-Lex answers 202 to
   non-browser clients and two reputable mirrors were found to differ in wording, so provenance names
   what was retrieved and when rather than claiming OJ status.
-- [x] H-10 (Refusal is evidence-driven, not stopword-driven): a question with no content-word
-  overlap with the corpus is refused, and the margin does not shrink as the corpus grows.
-  Falsifier: neutralise the term weighting and the out-of-corpus case still passes.
-  Closed: `inverseDocumentFrequencies` + IDF-weighted coverage in `scoreChunk`. Found by H-9: the
-  paraphrase's chunks were short enough that the CRR question scored `0.300` against the `0.3`
-  threshold on `die`/`fuer`/`im` alone and was answered; the verbatim (longer) text pushed it over.
-  Mutation-falsified twice (flat weights; constant unseen-term IDF — the latter being a bug the test
-  caught in this change's own first draft).
-  Caveat: over 14 chunks the same question still lands near `0.19`. Refused, but the margin is
-  corpus-size-dependent; it widens as the corpus grows, which is the opposite of the old behaviour.
+- [x] H-10 (Refusal is evidence-driven, not stopword-driven **on the in-memory fixture path**): a
+  question with no content-word overlap with the corpus is refused, and the margin does not shrink
+  as the corpus grows. Scope is the path `/demo` and `pnpm eval` run — `retrieveChunks` over
+  `loadFixtureCorpus`. The Postgres path has its own scorer and its own threshold and is NOT covered
+  by this item; see H-14.
+  Falsifier: neutralise the term weighting, or make the bm25 length bonus additive again, and the
+  corpus-growth sweep still passes.
+  Closed: `inverseDocumentFrequencies` + IDF-weighted coverage in `scoreChunk`, **plus** the bm25
+  length bonus scaled by `base` instead of added to it. Found by H-9: the paraphrase's chunks were
+  short enough that the CRR question scored `0.300` against the `0.3` threshold on `die`/`fuer`/`im`
+  alone and was answered; the verbatim (longer) text pushed it over.
+  Mutation-falsified three times (flat weights; constant unseen-term IDF; additive length bonus).
+
+  **Closed wrongly TWICE on 2026-07-16, the second time inside the retraction of the first.** The
+  re-close shipped a fresh false numeric comment in `retrieval.unit.test.ts`: it quoted the margin
+  sequence as `0.196 → 0.195 → 0.195 → 0.214` where the run gives `0.1957 → 0.1928 → 0.1951 →
+  0.2138`, and the "before" figures beside it came from the alien-vocabulary sweep, not the German
+  one the test actually runs. Caught by a second cross-vendor audit, in the very commit whose
+  purpose was to retract a false numeric claim. Same defect class, same hour.
+  The fix is structural, not another correction: **no measured sequence is quoted in a comment any
+  more.** Numbers that matter are `expect`ed — the sweep now pins both endpoints — because a number
+  in a comment is owned by no check and rots the moment the fixture moves. That, not the arithmetic,
+  is what went wrong both times.
+
+  **Closed once wrongly, on 2026-07-16.** The first close asserted "the margin widens as the corpus
+  grows" and merged it to `main` in code comments, this file, `docs/eval-harness.md` and the PR body.
+  The claim was false and backwards. It survived my own cross-vendor audit and was caught by a second,
+  deeper one, with a repro that reproduced exactly here: +50 unrelated chunks took the CRR question
+  to `0.369` and it was answered, citing Article 50 as evidence for a banking question. Root cause was
+  the additive length bonus, not IDF — it saturated at its `0.2` cap, two thirds of the threshold,
+  paid out for matching stopwords. **Nothing tested the claim**: the tests asserted a relation at one
+  corpus size (14 chunks) while the growth property lived only in a comment. The lesson is the rule
+  this repo already had — a claim without a probe is "should work" — and a comment is not a probe.
+  The sweep in `retrieval.unit.test.ts` now tests it at 14/24/64/314 chunks.
+
+  Caveat, measured and not claimed away: the guarantee is bounded. Growth in the same language widens
+  the margin (`0.104` → `0.069` over 14 → 2014 chunks). Growth with alien vocabulary erodes it
+  (`0.274` at 2000 synthetic chunks — refused, but close), because `base` is a ratio of IDF sums and
+  drifts toward the query's plain matched-token fraction, which for this question is `3/10` — the
+  threshold exactly. See `docs/eval-harness.md`. Mixed-language corpora are the case to watch; H-11.
+- [ ] H-15 (One threshold, one meaning): a chunk cited as evidence clears the same bar that decides
+  whether evidence exists at all. Needs a design decision from Marius, not a default from me.
+  Falsifier: an answered question cites a chunk whose own score would have been refused as
+  out-of-corpus had it been the best candidate.
+  Open. Found by the third cross-vendor audit (gpt-5.5, 2026-07-16). `0.3` is applied at the QUERY
+  level — "is there any evidence?" — while `finalChunks` returns `topK` regardless of each chunk's
+  own score. So a chunk at `0.265` is simultaneously not-evidence (if best) and evidence (as a
+  citation). Measured on "Wie muessen synthetische Inhalte gekennzeichnet werden?": gate opened by
+  `art50-marking` at `0.487`, and the answer also cites `art50-deepfake` (`0.265`) and
+  `art50-first-contact-accessibility` (`0.270`).
+  **Pre-existing in class, made worse by me in degree.** Before the H-10 length-bonus fix those two
+  scored `0.321` and `0.342` — above the bar — and only the 4th-ranked chunk sat below it. The
+  multiplicative bonus rescaled every score downward while `0.3` stayed put, taking this question
+  from zero sub-threshold citations to two.
+  Not the same class as the duplicate-id blocker, and the difference matters: there, the gate was
+  opened by text the citation did not show, which is a provenance lie. Here every cited chunk is
+  real, retrieved, and does contain the claim extracted from it. This is an internal inconsistency
+  in what "evidence" means, not a fabrication.
+  Resolution is a genuine design call with a visible cost either way — filter `finalChunks` to the
+  bar (answers get thinner, and `expected_chunks` in the golden set may move), give citations their
+  own lower bar (two constants to keep honest), or state that `0.3` is a query gate and ranking is
+  ranking (cheapest, but the demo's own copy has to stop implying otherwise). Related: H-14 is the
+  same shape — one constant carrying more than one meaning.
+- [ ] H-14 (The Postgres path's refusal threshold means something): the served API path refuses an
+  out-of-corpus question, verified against a real question rather than gibberish.
+  Falsifier: ask `retrievePostgresChunks` the CRR question against the Article 50 snapshot and watch
+  it answer.
+  Read from the code, not measured — no Postgres and no `BGE_M3_EMBEDDING_ENDPOINT` are reachable
+  here, so the behaviour below is UNVERIFIED and the item stays open on that ground alone:
+  - `src/modules/retrieval/postgres-retrieval.ts` redeclares `defaultThreshold = 0.3` (line 38) and
+    never calls the `retrieveChunks` that H-10 fixed. `/demo` is hardened; the API routes in
+    `runtime-app.ts` are not. Both are served by `src/commands/server.ts`.
+  - The constant `0.3` was calibrated for an IDF-weighted coverage ratio in `[0,1]`. It is applied
+    to two other scales: `1 - (embedding <=> $2::vector)` (cosine similarity, whose baseline between
+    unrelated German sentences is high) and `ts_rank_cd(...)` (unbounded, typically an order of
+    magnitude smaller). `bestEvidenceScore` takes the `max` of the two, so the larger-scaled dense
+    score decides the gate. Three scales, one constant.
+  - `plainto_tsquery('simple', ...)` applies no stemming and no stopword removal, so the lexical
+    half carries the same German-stopword exposure H-10 just fixed on the other path.
+  - The only probe is `"zzzz yyyyy xxxx"` (`acceptance.postgres-ingest.integration.test.ts:172`) —
+    noise that yields an empty tsquery. It cannot distinguish a working gate from an absent one.
+  Found by the same cross-vendor audit as the H-10 retraction.
 - [ ] H-13 (The required check is not load-flaky): no unit test spawns a subprocess under the unit
   project's 5s default timeout. Falsifier: run `pnpm check:fast` under CPU contention and watch a
   timeout fail the build.
@@ -103,7 +189,15 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   Kennzeichnung` does not match `maschinenlesbaren Format ... gekennzeichnet`. Two of the five
   existing cases had to be reworded into the law's own inflections to pass, which is the tell. A
   100-case set authored this way would measure whether questions echo the statute's wording, not
-  whether retrieval works. Resolution is a design call (real embeddings on the eval path vs German
+  whether retrieval works.
+  German compounds are the sharpest edge of this and the H-10 fix exposed a third instance:
+  "Wie muessen **KI-Ausgaben** gekennzeichnet werden?" cannot match a corpus that says "Ausgaben",
+  because nothing splits the compound. It scores `0.273` and is refused, though Article 50 plainly
+  answers it. It had been passing in `demo.integration.test.ts` purely on the additive bm25 length
+  bonus — the same artifact that let a banking question be answered with AI-Act text. Every question
+  that bonus was propping up is a question this path cannot actually retrieve: the demo chip
+  (2026-07-16, reworded), this test, and any of the 100 to come. That is the concrete cost of
+  leaving H-11 open, and the reason it gates H-1. Resolution is a design call (real embeddings on the eval path vs German
   stemming vs an explicitly lexical harness with the limit stated); see `docs/eval-harness.md`
   § What this harness measures.
 - [x] H-2 (AI reliability): every model and embedding call retries 429 and 5xx with bounded

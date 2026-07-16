@@ -25,11 +25,17 @@ describe("public demo route", () => {
   });
 
   it("answers a question and renders the signed ledger row that recorded it", async () => {
+    // Asserting only that the page CONTAINS the evidence does not prove it was answered: the
+    // refusal page renders the rejected candidates too, so every `toContain` below passes on a
+    // refusal. This test asked "Wie muessen KI-Ausgaben gekennzeichnet werden?" and stayed green
+    // while the route refused it (H-11: the corpus says "Ausgaben", nothing splits the compound).
+    // So the outcome is now asserted explicitly, and the question is one retrieval can see.
     const response = await get(
-      `/demo?q=${encodeURIComponent("Wie muessen KI-Ausgaben gekennzeichnet werden?")}`,
+      `/demo?q=${encodeURIComponent("Wie muessen synthetische Inhalte gekennzeichnet werden?")}`,
     );
     const html = await response.text();
     expect(response.status).toBe(200);
+    expect(html).not.toContain("refused-out-of-corpus");
     expect(html).toContain("maschinenlesbaren Format");
     expect(html).toContain("art50-marking");
     expect(html).toContain("Ed25519");
@@ -44,7 +50,13 @@ describe("public demo route", () => {
   });
 
   it("replays a ledger row byte-for-byte and verifies the whole chain", async () => {
-    const entry = demo.ask("Wie muessen KI-Ausgaben gekennzeichnet werden?").entry;
+    // This test is about replay, so it just needs an answered row. It used to ask "Wie muessen
+    // KI-Ausgaben gekennzeichnet werden?", which retrieval cannot actually see: the corpus says
+    // "Ausgaben", the question says the compound "KI-Ausgaben", and this path does no decompounding
+    // (H-11). It scored 0.273 and is refused on the evidence. It only ever passed because the old
+    // additive bm25 length bonus carried it over the 0.3 line — the same artifact that answered a
+    // banking question with AI-Act text (H-10). Third question found propped up by that bonus.
+    const entry = demo.ask("Wie muessen synthetische Inhalte gekennzeichnet werden?").entry;
     const response = await app.fetch(
       new Request("http://demo.local/demo/replay", {
         method: "POST",

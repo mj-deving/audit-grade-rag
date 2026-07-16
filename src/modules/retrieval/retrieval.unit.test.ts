@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { CorpusChunk } from "../../domain/types.js";
 import { loadFixtureCorpus, pinnedEvalTuple } from "../eval/eval.js";
 import { inverseDocumentFrequencies, retrieveChunks } from "./retrieval.js";
 
@@ -8,17 +9,64 @@ import { inverseDocumentFrequencies, retrieveChunks } from "./retrieval.js";
 // Until 2026-07-16 that promise was decided by German stopwords. The score was an unweighted term
 // count over the query, so "Welche Eigenkapitalquote verlangt die CRR fuer Sparkassen im Jahr
 // 2030?" — a banking-supervision question with zero content words in the corpus — matched only
-// "die", "fuer" and "im" and scored exactly 0.300 against the 0.3 threshold. It answered. The
-// defect was masked by a paraphrased corpus whose chunks were short enough to stay under the line;
-// restoring the verbatim (longer) regulation text pushed it over.
+// "die", "fuer" and "im" and scored exactly 0.300 against the 0.3 threshold. It answered.
 //
-// The failure mode is silent and gets worse as the corpus grows, so these tests assert the
-// mechanism (weighting), not just the current verdict.
+// IDF weighting was the first fix, and it was shipped with a claim that the margin now WIDENS as
+// the corpus grows. That claim was false and backwards, and no test here checked it — it lived in
+// a comment while the tests only ever asserted a relation at one corpus size (14 chunks). A
+// cross-vendor audit found it with a live repro: adding 50 unrelated chunks took the CRR question
+// to 0.369 and it was answered. The real culprit was the bm25 length bonus, an additive term that
+// never looked at the query and saturated at 0.2 — two thirds of the threshold.
+//
+// So the sweep below is the point of this file. A property claimed over corpus growth is tested
+// over corpus growth.
 
 const options = { activeSnapshotId: pinnedEvalTuple.corpusSnapshotId } as const;
+const threshold = 0.3;
+
+const outOfCorpusQuestion =
+  "Welche Eigenkapitalquote verlangt die CRR fuer Sparkassen im Jahr 2030?";
+const coveredQuestion =
+  "Welche Pflichten gelten fuer die direkte Interaktion mit natuerlichen Personen und fuer Ausgaben in einem maschinenlesbaren Format?";
+
+// German legal prose from other domains: ordinary stopword density, nothing about capital ratios.
+// This is what growing the corpus actually looks like (H-1 wants 100+ cases over more law), as
+// opposed to a synthetic filler whose vocabulary is alien to the language.
+const unrelatedGermanChunks = [
+  "Der Verantwortliche trifft die geeigneten Massnahmen, um die Rechte der betroffenen Person zu wahren.",
+  "Die Aufsichtsbehoerde unterrichtet den Antragsteller ueber den Stand des Verfahrens innerhalb eines Monats.",
+  "Diese Verordnung gilt fuer die Verarbeitung personenbezogener Daten im Rahmen der Taetigkeiten einer Niederlassung.",
+  "Der Betreiber stellt sicher, dass die Anlage nach dem Stand der Technik betrieben wird.",
+  "Die Mitgliedstaaten erlassen die Vorschriften ueber Sanktionen und treffen die erforderlichen Massnahmen.",
+  "Ein Vertrag kommt zustande, wenn die Parteien sich ueber die wesentlichen Bestandteile geeinigt haben.",
+];
 
 async function corpus() {
   return loadFixtureCorpus("corpus-fixtures");
+}
+
+function grownBy(base: readonly CorpusChunk[], count: number): readonly CorpusChunk[] {
+  const template = base[0];
+  if (template === undefined) {
+    throw new Error("fixture corpus is empty");
+  }
+  return [
+    ...base,
+    ...Array.from({ length: count }, (_, index) => ({
+      ...template,
+      chunkId: `unrelated-${String(index)}`,
+      chunkText: unrelatedGermanChunks[index % unrelatedGermanChunks.length] ?? "",
+    })),
+  ];
+}
+
+function bestScore(question: string, chunks: readonly CorpusChunk[]): number {
+  const trace = retrieveChunks(question, chunks, options);
+  return Math.max(
+    0,
+    ...trace.vectorCandidates.map((chunk) => chunk.retrievalScore),
+    ...trace.bm25Candidates.map((chunk) => chunk.retrievalScore),
+  );
 }
 
 describe("inverseDocumentFrequencies", () => {
@@ -55,28 +103,28 @@ describe("out-of-corpus refusal", () => {
   it("scores a stopword-only match far below a real match, not just under the threshold", async () => {
     // The regression that bit: the same question scored 0.300 against a 0.3 threshold. Asserting
     // only `outOfCorpus === true` would pass again at 0.299, one longer chunk away from breaking.
-    //
-    // The relation is asserted rather than an absolute number, because the absolute score depends
-    // on corpus size: with only 14 chunks a stopword like "im" still earns real IDF, and this
-    // question lands at ~0.19 — refused, but with less margin than the ratio suggests. That
-    // margin widens as the corpus grows (a stopword's IDF falls as its document frequency rises),
-    // which is the opposite of the pre-IDF behaviour, where growth ate the margin.
     const chunks = await corpus();
-    const best = (question: string): number => {
-      const trace = retrieveChunks(question, chunks, options);
-      return Math.max(
-        0,
-        ...trace.vectorCandidates.map((chunk) => chunk.retrievalScore),
-        ...trace.bm25Candidates.map((chunk) => chunk.retrievalScore),
-      );
-    };
-    const stopwordsOnly = best(
-      "Welche Eigenkapitalquote verlangt die CRR fuer Sparkassen im Jahr 2030?",
+    expect(bestScore(outOfCorpusQuestion, chunks)).toBeLessThan(
+      bestScore(coveredQuestion, chunks) / 2,
     );
-    const covered = best(
-      "Welche Pflichten gelten fuer die direkte Interaktion mit natuerlichen Personen und fuer Ausgaben in einem maschinenlesbaren Format?",
+  });
+
+  it("never lets the bm25 length bonus stand in for evidence", async () => {
+    // The mechanism behind the corpus-growth sweep, pinned directly so a refactor cannot quietly
+    // restore the additive form. A chunk that carries none of the query's information must score 0
+    // on the bm25 pass too — being short is not evidence.
+    const base = await corpus();
+    const template = base[0];
+    expect(template).toBeDefined();
+    const trace = retrieveChunks(
+      "Eigenkapitalquote Sparkassen",
+      [{ ...(template as CorpusChunk), chunkId: "short-unrelated", chunkText: "alpha beta" }],
+      options,
     );
-    expect(stopwordsOnly).toBeLessThan(covered / 2);
+    expect(trace.bm25Candidates.length).toBeGreaterThan(0);
+    for (const candidate of trace.bm25Candidates) {
+      expect(candidate.retrievalScore, "a zero-evidence chunk must earn no bm25 bonus").toBe(0);
+    }
   });
 
   it("still answers and ranks a question the corpus does cover", async () => {
@@ -88,5 +136,53 @@ describe("out-of-corpus refusal", () => {
     );
     expect(trace.outOfCorpus).toBe(false);
     expect(trace.finalChunks.map((chunk) => chunk.chunkId)).toContain("art50-interaction");
+  });
+});
+
+describe("refusal under corpus growth", () => {
+  // THE property this file exists for. The shipped claim was "the margin widens as the corpus
+  // grows". It lived in a comment, was never probed, and was backwards. Growth is exactly the
+  // direction this project is about to move in (H-1), so growth is what gets asserted.
+  it("holds the refusal at every corpus size, without losing margin", async () => {
+    const base = await corpus();
+    const margins = [0, 10, 50, 300].map((added) => {
+      const chunks = grownBy(base, added);
+      const size = String(chunks.length);
+      const outScore = bestScore(outOfCorpusQuestion, chunks);
+      expect(outScore, `${size} chunks: out-of-corpus question must stay refused`).toBeLessThan(
+        threshold,
+      );
+      expect(
+        bestScore(coveredQuestion, chunks),
+        `${size} chunks: covered question must stay answerable`,
+      ).toBeGreaterThan(threshold);
+      return threshold - outScore;
+    });
+
+    // Non-erosion, with 0.01 of slack for the dip at 24 chunks.
+    //
+    // No measured sequence is quoted here. The first version of this comment quoted one, it was
+    // wrong (it read 0.195 where the run gives 0.193, and its "before" figures came from a
+    // different sweep than this test runs), and the audit caught it — in the very commit that
+    // exists to retract a false numeric comment. Numbers in a comment are unowned by any check and
+    // rot the moment the fixture moves. If a number matters, it belongs in an assertion, so the
+    // fixed points below are asserted rather than narrated.
+    for (const [index, margin] of margins.entries()) {
+      const previous = margins[index - 1];
+      if (previous !== undefined) {
+        expect(
+          margin,
+          `margin must not erode as the corpus grows (step ${String(index)})`,
+        ).toBeGreaterThan(previous - 0.01);
+      }
+    }
+
+    // The endpoints, pinned. A relation alone would still pass if every score drifted together,
+    // and drift is exactly how the additive bonus hid: it moved all of them at once.
+    expect(margins.at(0) ?? 0).toBeCloseTo(0.1957, 3);
+    expect(margins.at(-1) ?? 0).toBeCloseTo(0.2138, 3);
+    // Growth must end better than it started, which is the property H-10 originally claimed and
+    // could not back.
+    expect(margins.at(-1) ?? 0).toBeGreaterThan(margins.at(0) ?? 0);
   });
 });
