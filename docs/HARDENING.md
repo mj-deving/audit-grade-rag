@@ -32,6 +32,47 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
 - [ ] H-1 (Evals as gate): the golden set holds at least 100 cases across the adversarial
   tag taxonomy, and a seeded regression under threshold fails CI. Falsifier: `wc -l` on the
   golden set under 100, or a deliberately-wrong answer does not drop a metric below its gate.
+  **Blocked on H-11.** Scaling the set was started on 2026-07-16 and stopped at the corpus: the
+  fixture was 4/6 paraphrase (H-9), so 100 cases would have been 100 citations into text that is
+  not the law. H-9 and H-10 are the fallout and are closed; H-11 is the remaining design question.
+- [x] H-9 (Corpus is the source): every corpus chunk is a verbatim substring of a committed source
+  snapshot that still hashes to its recorded provenance. Falsifier: edit a chunk into a paraphrase,
+  or edit the snapshot, and the gate stays green.
+  Closed: `scripts/fetch-corpus-source.ts` writes the snapshot plus `{retrievalUrl, retrievedAt,
+  sha256}`; `src/modules/eval/corpus-provenance.unit.test.ts` enforces hash and verbatim-substring
+  for every chunked fixture, and refuses to pass vacuously on an empty corpus dir. Article 50
+  rebuilt from the snapshot: 6 chunks (4 of them paraphrase) to 14 verbatim. Mutation-falsified by
+  re-inserting the exact historical paraphrase (caught) and by editing the snapshot (caught — the
+  substring test alone is blind to that, the hash is what sees it).
+  Discovery: the fixture header and the public demo both claimed "Auszug aus Artikel 50 der
+  EU-KI-Verordnung"; one chunk had widened an exception's scope from a single duty to all
+  transparency duties and dropped a counter-exception outright. The demo string did not need
+  weakening — the corpus was changed until the claim was true.
+  Caveat: the snapshot is a mirror's rendering, not the Official Journal. EUR-Lex answers 202 to
+  non-browser clients and two reputable mirrors were found to differ in wording, so provenance names
+  what was retrieved and when rather than claiming OJ status.
+- [x] H-10 (Refusal is evidence-driven, not stopword-driven): a question with no content-word
+  overlap with the corpus is refused, and the margin does not shrink as the corpus grows.
+  Falsifier: neutralise the term weighting and the out-of-corpus case still passes.
+  Closed: `inverseDocumentFrequencies` + IDF-weighted coverage in `scoreChunk`. Found by H-9: the
+  paraphrase's chunks were short enough that the CRR question scored `0.300` against the `0.3`
+  threshold on `die`/`fuer`/`im` alone and was answered; the verbatim (longer) text pushed it over.
+  Mutation-falsified twice (flat weights; constant unseen-term IDF — the latter being a bug the test
+  caught in this change's own first draft).
+  Caveat: over 14 chunks the same question still lands near `0.19`. Refused, but the margin is
+  corpus-size-dependent; it widens as the corpus grows, which is the opposite of the old behaviour.
+- [ ] H-11 (The eval measures retrieval, not vocabulary): the golden set is answerable by the eval's
+  retrieval path without being written in the corpus's exact inflections. Falsifier: rewording a
+  case into natural German that a competent reader would use flips it from answered to refused.
+  Open, and it gates H-1. Both eval candidate passes (`dense` and `bm25`) run the same lexical
+  scorer over fixture text — no embedding is computed, despite the pinned tuple naming `bge-m3` —
+  and matching is exact-token with no stemming. In German that is brittle: `maschinenlesbare
+  Kennzeichnung` does not match `maschinenlesbaren Format ... gekennzeichnet`. Two of the five
+  existing cases had to be reworded into the law's own inflections to pass, which is the tell. A
+  100-case set authored this way would measure whether questions echo the statute's wording, not
+  whether retrieval works. Resolution is a design call (real embeddings on the eval path vs German
+  stemming vs an explicitly lexical harness with the limit stated); see `docs/eval-harness.md`
+  § What this harness measures.
 - [x] H-2 (AI reliability): every model and embedding call retries 429 and 5xx with bounded
   exponential backoff plus jitter, under a per-call timeout, with a defined fallback.
   Falsifier: a simulated 429 crashes the call, or no retry path exists in the provider.
@@ -93,8 +134,11 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
 
 Ordered by dependency and blast radius (self-contained code first, deploy-side infra last).
 
-- **Wave 1 (self-contained code, no infra):** H-2, H-3, H-4. Lands as one Forge-audited PR.
+- **Wave 1 (self-contained code, no infra):** H-2, H-3, H-4. Landed 2026-07-15 (PR #16).
 - **Wave 2 (evals, the single most load-bearing item):** H-1. Dataset authoring; own PR.
+  Wave 2a landed the corpus foundation the dataset has to stand on: H-9 and H-10, both found by
+  trying to author the dataset and discovering what was underneath it. H-1 itself is blocked on the
+  H-11 design call.
 - **Wave 3 (deploy-side, needs an operator hand on the VPS/CF):** H-5, H-6, H-7. Backup
   cron, alert wiring, SLO measurement against the live deploy.
 
