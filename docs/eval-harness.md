@@ -60,9 +60,36 @@ This replaced an unweighted term count on 2026-07-16. Under the old scorer, "Wel
 Eigenkapitalquote verlangt die CRR fuer Sparkassen im Jahr 2030?" — a banking-supervision question
 with zero content words in the corpus — matched only `die`, `fuer` and `im` and scored exactly
 `0.300` against the `0.3` threshold, so it was answered. The refusal the demo console promises was
-being decided by German stopwords, and the margin shrank as chunks got longer. Weighting by IDF
-inverts that: the margin now *widens* as the corpus grows.
+being decided by German stopwords.
 
-The margin is still corpus-size-dependent. Over only 14 chunks a stopword like `im` earns
-non-trivial IDF, and that question lands near `0.19` — refused, but not by much.
-`src/modules/retrieval/retrieval.unit.test.ts` guards the mechanism rather than the number.
+### Retracted: "the margin widens as the corpus grows"
+
+An earlier revision of this page, and of the code comments, claimed IDF made the refusal margin grow
+with the corpus. **That claim was false and backwards, and it shipped.** A cross-vendor audit
+refuted it with a repro that reproduced exactly: adding 50 unrelated chunks took the CRR question
+from `0.186` to `0.369` and it was *answered*, citing Article 50 text as its evidence.
+
+The cause was not IDF but the bm25 length bonus sitting next to it — an additive term,
+`min(0.2, matchedWeight/max(10, chunkLen))`, that never referenced the query. `matchedWeight` grows
+like `ln(corpusSize)`, so the bonus saturated at its own `0.2` cap: two thirds of the refusal
+threshold, awarded for matching stopwords. The IDF-weighted `base` never crossed `0.3` on its own in
+that sweep. The bonus is now a multiplier on `base`, so a chunk carrying none of the query's
+information earns no bonus however short it is.
+
+### What the refusal gate actually guarantees
+
+Measured, not asserted — the sweep lives in `src/modules/retrieval/retrieval.unit.test.ts` and fails
+if any of this stops holding.
+
+- Growing the corpus with **more German legal prose** (what this project will actually do): the
+  CRR question goes `0.104` → `0.069` as the corpus grows 14 → 2014 chunks. The margin holds and
+  slightly widens. Covered questions stay at `0.49`–`0.63`.
+- Growing it with **vocabulary alien to the query's language**: the margin erodes. At 2000 synthetic
+  chunks sharing no German the question reaches `0.274`, still refused but close.
+
+The reason is structural and worth stating plainly: `base` is a ratio of IDF sums, and every IDF
+grows like `ln(corpusSize)` when its document frequency stays put. Matched and unmatched weights
+grow together, so `base` drifts toward the query's plain matched-**token** fraction — the unweighted
+count IDF was introduced to replace. For the CRR question that fraction is `3/10`, sitting exactly on
+the threshold. IDF buys a large margin at realistic sizes and within one language. It does not buy an
+asymptotic guarantee, and a mixed-language corpus is the case to watch. Tracked with H-11.

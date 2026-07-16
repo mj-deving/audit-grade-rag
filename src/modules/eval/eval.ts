@@ -185,27 +185,87 @@ function parseGoldenLine(line: string, lineNumber: number): GoldenCase {
     : { ...parsed, expected_chunks: stringArray(value.expected_chunks) };
 }
 
+/**
+ * Chunk ids must be unique across the WHOLE corpus, not merely within a file.
+ *
+ * A per-file check is not enough, and the difference is the product: a citation names a chunk id,
+ * and `reciprocalRankFusion` keys its score map on that id. Two files each carrying
+ * `<!-- chunk:dup -->` therefore fuse into one entry whose score came from both texts and whose
+ * displayed text is whichever the map happened to keep.
+ *
+ * Verified 2026-07-16 with two fixture files under one id — one harmless, one carrying fabricated
+ * banking text. The out-of-corpus CRR question was ANSWERED (the fabrication opened the refusal
+ * gate) and the answer cited the OTHER file's harmless sentence as its evidence. An answer whose
+ * gate was opened by text it does not cite is precisely the failure this project exists to make
+ * impossible, so this is a load error, not a warning.
+ */
 export async function loadFixtureCorpus(corpusDir: string): Promise<readonly CorpusChunk[]> {
   const files = (await readdir(corpusDir))
     .filter((file) => file.endsWith(".md"))
     .map((file) => join(corpusDir, file))
     .sort();
-  const chunks = await Promise.all(files.map((file) => chunksFromFixtureFile(file)));
-  return chunks.flat();
+  const perFile = await Promise.all(files.map((file) => chunksFromFixtureFile(file)));
+  const chunks = perFile.flat();
+  const seenIn = new Map<string, string>();
+  for (const chunk of chunks) {
+    const previous = seenIn.get(chunk.chunkId);
+    if (previous !== undefined) {
+      throw new Error(
+        `${corpusDir}: duplicate chunk id "${chunk.chunkId}" in ${previous} and ${chunk.sourcePath} — chunk ids must be unique across the corpus`,
+      );
+    }
+    seenIn.set(chunk.chunkId, chunk.sourcePath);
+  }
+  return chunks;
 }
 
-async function chunksFromFixtureFile(path: string): Promise<readonly CorpusChunk[]> {
-  const content = await readFile(path, "utf8");
+export type ParsedFixtureChunk = {
+  readonly chunkId: string;
+  readonly chunkText: string;
+};
+
+/**
+ * The one parser for fixture chunk markers. Runtime retrieval and the provenance gate MUST agree on
+ * what a fixture file contains, and they did not: this returned an ordered array that kept every
+ * marker, while the gate in `corpus-provenance.unit.test.ts` kept a `Map` keyed on chunk id, so a
+ * repeated id silently collapsed to its last occurrence.
+ *
+ * Verified 2026-07-16 by injecting a second `<!-- chunk:art50-marking -->` carrying an invented
+ * sentence that inverts the law's duty into a discretion ("Anbieter duerfen ... nach eigenem
+ * Ermessen kennzeichnen"). The corpus loaded 15 chunks with two under that id, the fabrication
+ * among them, citable and signable — and all four provenance tests passed. The gate built to keep
+ * paraphrase out of the corpus was blind to the one shape that mattered.
+ *
+ * Duplicate ids are therefore a hard parse error rather than a lint: `addRrfScores` also keys on
+ * chunk id and would fuse two different texts into one score, and a citation to a duplicated id
+ * does not identify which text was cited — which is the whole product.
+ *
+ * This function only sees one file. Uniqueness across the corpus is enforced in
+ * `loadFixtureCorpus`, because the cross-file case is the one that actually shipped an answer
+ * citing text that did not open its gate.
+ */
+export function parseFixtureChunks(content: string, path: string): readonly ParsedFixtureChunk[] {
   const parts = content.split(/<!--\s*chunk:([A-Za-z0-9_-]+)\s*-->/u);
-  const chunks: CorpusChunk[] = [];
+  const chunks: ParsedFixtureChunk[] = [];
+  const seen = new Set<string>();
   for (let index = 1; index < parts.length; index += 2) {
     const chunkId = parts[index];
     const chunkText = parts[index + 1]?.trim();
-    if (chunkId !== undefined && chunkText !== undefined && chunkText.length > 0) {
-      chunks.push(fixtureChunk(path, chunkId, chunkText, chunks.length));
+    if (chunkId === undefined || chunkText === undefined || chunkText.length === 0) {
+      continue;
     }
+    if (seen.has(chunkId)) {
+      throw new Error(`${path}: duplicate chunk id "${chunkId}" — chunk ids must be unique`);
+    }
+    seen.add(chunkId);
+    chunks.push({ chunkId, chunkText });
   }
   return chunks;
+}
+
+async function chunksFromFixtureFile(path: string): Promise<readonly CorpusChunk[]> {
+  const parsed = parseFixtureChunks(await readFile(path, "utf8"), path);
+  return parsed.map((chunk, index) => fixtureChunk(path, chunk.chunkId, chunk.chunkText, index));
 }
 
 function fixtureChunk(
