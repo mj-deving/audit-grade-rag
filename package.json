@@ -55,7 +55,8 @@
       "src/eval/trace-probe.ts",
       "src/eval/langfuse-dataset-seed.ts",
       "src/eval/langfuse-experiment.ts",
-      "scripts/osv-check.ts"
+      "scripts/osv-check.ts",
+      "scripts/fetch-corpus-source.ts"
     ],
     "project": [
       "src/**/*.ts",
