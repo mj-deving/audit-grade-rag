@@ -35,15 +35,21 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   **Blocked on H-11.** Scaling the set was started on 2026-07-16 and stopped at the corpus: the
   fixture was 4/6 paraphrase (H-9), so 100 cases would have been 100 citations into text that is
   not the law. H-9 and H-10 are the fallout and are closed; H-11 is the remaining design question.
-- [x] H-9 (Corpus is the source): every corpus chunk is a verbatim substring of a committed source
-  snapshot that still hashes to its recorded provenance. Falsifier: edit a chunk into a paraphrase,
-  or edit the snapshot, and the gate stays green.
+- [x] H-9 (Corpus is the source): the chunks of every fixture reconstruct a committed source
+  snapshot exactly — each verbatim, in order, with nothing dropped — and that snapshot still hashes
+  to its recorded provenance. Falsifier: paraphrase a chunk, delete a clause from one, or edit the
+  snapshot, and the gate stays green.
   Closed: `scripts/fetch-corpus-source.ts` writes the snapshot plus `{retrievalUrl, retrievedAt,
-  sha256}`; `src/modules/eval/corpus-provenance.unit.test.ts` enforces hash and verbatim-substring
-  for every chunked fixture, and refuses to pass vacuously on an empty corpus dir. Article 50
-  rebuilt from the snapshot: 6 chunks (4 of them paraphrase) to 14 verbatim. Mutation-falsified by
-  re-inserting the exact historical paraphrase (caught) and by editing the snapshot (caught — the
-  substring test alone is blind to that, the hash is what sees it).
+  sha256}`; `src/modules/eval/corpus-provenance.unit.test.ts` enforces hash, verbatim-substring, and
+  full reconstruction for every chunked fixture, and refuses to pass vacuously on an empty corpus
+  dir. Article 50 rebuilt from the snapshot: 6 chunks (4 of them paraphrase) to 14 verbatim.
+  The reconstruction check is the one that matches the harm. Substring-checking proves nothing was
+  invented; it is blind to omission, and omission is what the original defect actually did — it kept
+  an exception and dropped the counter-exception that re-imposes the duty. Verbatim text minus a
+  clause is still a misrepresentation of the law.
+  Mutation-falsified three ways: the exact historical paraphrase re-inserted (caught), the snapshot
+  edited while chunks stayed substrings (caught — only the hash sees that), and the counter-exception
+  deleted with everything else left verbatim (caught only by reconstruction).
   Discovery: the fixture header and the public demo both claimed "Auszug aus Artikel 50 der
   EU-KI-Verordnung"; one chunk had widened an exception's scope from a single duty to all
   transparency duties and dropped a counter-exception outright. The demo string did not need

@@ -73,6 +73,29 @@ describe("corpus provenance", () => {
     }
   });
 
+  it("accounts for the whole source, in order, with nothing dropped", async () => {
+    // Substring-checking each chunk proves nothing was invented. It does NOT prove nothing was
+    // omitted — and omission is the shape the original defect actually took: an exception was kept
+    // while the counter-exception that re-imposes the duty ("es sei denn, diese Systeme stehen der
+    // Öffentlichkeit zur Anzeige einer Straftat zur Verfügung") was dropped. Verbatim text minus a
+    // clause is still a misrepresentation of the law, and it would sail through the substring test.
+    //
+    // So the chunks must reconstruct the snapshot exactly: concatenated in file order they equal
+    // the source, less the "(N)" paragraph markers that chunk boundaries replace. That makes the
+    // corpus the source rather than a selection from it.
+    for (const path of await fixtureFiles()) {
+      const slug = basename(path, ".md");
+      const snapshot = normalize(await readFile(join(sourcesDir, `${slug}.source.txt`), "utf8"));
+      const withoutParagraphMarkers = normalize(snapshot.replace(/\(\d+\)\s*/gu, " "));
+      const rejoined = [...chunksOf(await readFile(path, "utf8")).values()]
+        .map(normalize)
+        .join(" ");
+      expect(rejoined, `${slug}: chunks do not reconstruct the source`).toBe(
+        withoutParagraphMarkers,
+      );
+    }
+  });
+
   it("cuts every chunk verbatim from its source snapshot", async () => {
     for (const path of await fixtureFiles()) {
       const slug = basename(path, ".md");
