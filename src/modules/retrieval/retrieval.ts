@@ -36,19 +36,42 @@ export function retrieveChunks(
   );
   const bm25Candidates = rankCandidates(query, activeChunks, "bm25", idf).slice(0, candidateLimit);
   const mergedCandidates = reciprocalRankFusion(vectorCandidates, bm25Candidates);
-  const finalChunks = mergedCandidates.slice(0, topK);
-  const bestEvidenceScore = Math.max(
-    0,
-    ...vectorCandidates.map((chunk) => chunk.retrievalScore),
-    ...bm25Candidates.map((chunk) => chunk.retrievalScore),
-  );
+  const threshold = options.outOfCorpusThreshold ?? defaultThreshold;
+  const evidenceScores = bestEvidenceScores(vectorCandidates, bm25Candidates);
+  const bestEvidenceScore = Math.max(0, ...evidenceScores.values());
+  // A cited chunk clears the same bar that decides whether evidence exists at all. `0.3` used to be a
+  // QUERY-level gate only — it asked "is there any evidence?" of the best candidate, while topK came
+  // back regardless of each chunk's own score. So a chunk at 0.265 was simultaneously not-evidence
+  // (it would have triggered a refusal had it ranked first) and evidence (it was rendered into the
+  // prompt, validated against, and signed into the ledger as a citation).
+  //
+  // Filtered on the PRE-FUSION evidence score, never the RRF score sitting in `retrievalScore` here:
+  // fusion rescales to ~0.016-0.032, so comparing that against 0.3 would drop every chunk on every
+  // query and refuse the whole corpus.
+  const finalChunks = mergedCandidates
+    .filter((chunk) => (evidenceScores.get(chunk.chunkId) ?? 0) >= threshold)
+    .slice(0, topK);
   return {
     vectorCandidates,
     bm25Candidates,
     mergedCandidates,
     finalChunks,
-    outOfCorpus: bestEvidenceScore < (options.outOfCorpusThreshold ?? defaultThreshold),
+    outOfCorpus: bestEvidenceScore < threshold,
   };
+}
+
+// The evidence score of a chunk is the best score either ranker gave it, which is exactly what the
+// out-of-corpus gate reads via its max. Keeping one function for both means the gate and the citation
+// filter can never drift apart into two notions of "evidence".
+function bestEvidenceScores(
+  vectorCandidates: readonly RetrievedChunk[],
+  bm25Candidates: readonly RetrievedChunk[],
+): ReadonlyMap<string, number> {
+  const scores = new Map<string, number>();
+  for (const chunk of [...vectorCandidates, ...bm25Candidates]) {
+    scores.set(chunk.chunkId, Math.max(scores.get(chunk.chunkId) ?? 0, chunk.retrievalScore));
+  }
+  return scores;
 }
 
 export function parseTopK(topK: number | undefined): number {

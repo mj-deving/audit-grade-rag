@@ -46,9 +46,15 @@ reading `maschinenlesbaren Format ... gekennzeichnet`. Golden questions are ther
 lexically fair to this scorer. That is a real limit on what a passing score proves — it is closer to
 "the ranker orders a known-answerable question correctly" than "retrieval works".
 
-**Citation accuracy is weak while the corpus is small.** `topK` is 8. Against a 14-chunk corpus the
-provider cites more than half of it for every question, so any expected chunk in the top 8 passes.
-The metric only becomes discriminating once the corpus is much larger than `topK`.
+**Citation accuracy used to be weak because `topK` outran the corpus, and this section said so before
+anyone acted on it.** `topK` is 8, and against the old 14-chunk corpus the provider cited more than
+half of it for every question, so any expected chunk in the top 8 passed. Since 2026-07-16 a citation
+must also clear the `0.3` evidence bar (H-15), which makes the metric discriminating at any corpus
+size: survivors per golden case are now 2, 1, 1, 5 and 0 of a possible 8, rather than 8 every time.
+What the old dump was hiding is worth keeping in view — the model was doing the selection the ranker
+could not, so a passing citation score partly measured the model. It is a narrower claim now, not yet
+a strong one; the corpus is still smaller than `topK`, and H-1 is what makes this metric mean
+something.
 
 ## Out-of-corpus refusal
 
@@ -82,10 +88,14 @@ Measured, not asserted — the sweep lives in `src/modules/retrieval/retrieval.u
 if any of this stops holding.
 
 - Growing the corpus with **more German legal prose** (what this project will actually do): the
-  CRR question goes `0.104` → `0.069` as the corpus grows 14 → 2014 chunks. The margin holds and
-  slightly widens. Covered questions stay at `0.49`–`0.63`.
-- Growing it with **vocabulary alien to the query's language**: the margin erodes. At 2000 synthetic
-  chunks sharing no German the question reaches `0.274`, still refused but close.
+  CRR question goes `0.080` → `0.069` as the corpus grows 8 → 2008 chunks. The margin holds. Covered
+  questions stay at `0.44`–`0.56`.
+- Growing it with **vocabulary alien to the query's language**: the margin erodes. At 2000 added
+  synthetic chunks sharing no German the question reaches `0.283`, still refused but close.
+- The margin is **not monotonic** and the sweep asserts no trend, only a floor: across 8/18/58/308
+  chunks it runs `0.2195` → `0.2048` → `0.1969` → `0.2140`, so the question never scores above a third
+  of the bar. An earlier version of this section asserted that growth "ends better than it starts";
+  that was a quieter restatement of the retracted claim above and is gone.
 
 The reason is structural and worth stating plainly: `base` is a ratio of IDF sums, and every IDF
 grows like `ln(corpusSize)` when its document frequency stays put. Matched and unmatched weights
@@ -93,3 +103,32 @@ grow together, so `base` drifts toward the query's plain matched-**token** fract
 count IDF was introduced to replace. For the CRR question that fraction is `3/10`, sitting exactly on
 the threshold. IDF buys a large margin at realistic sizes and within one language. It does not buy an
 asymptotic guarantee, and a mixed-language corpus is the case to watch. Tracked with H-11.
+
+### One threshold, one meaning — and why the corpus had to move first
+
+`0.3` decides two questions and used to answer only one. It gates the *query* ("is there any
+evidence?") by testing the best candidate, but `finalChunks` returned `topK` regardless of each
+chunk's own score, and those chunks are what reach the prompt, the claim validator and the signed
+ledger. A chunk at `0.265` was therefore not-evidence and evidence at once. Since 2026-07-16 a chunk
+must clear the same bar to be cited, and a refusal cites nothing at all.
+
+The filter could not ship on its own, and the reason is the more useful half of the story. Applied to
+the corpus as it was cut, it took `pnpm eval` to `citation-accuracy: 0.8`, `passed: false`. The case
+that broke was the one tagged `ambiguous` — "Muss jeder KI-generierte Text offengelegt werden, wenn er
+veroeffentlicht wird?" — which kept the duty (`0.3286`) and dropped its editorial exception
+(`0.0491`). The exception was then absent from the prompt, so the only answer available was "yes,
+disclose": Article 50 misstated, on the single case built to test duty-versus-exception.
+
+The cause was the chunking. Article 50 states a duty and narrows it with a clause that names its
+subject anaphorically, and four of the five exception chunks opened with the identical string "Diese
+Pflicht gilt nicht". None named the duty it limited. So an exception was unreachable from its own
+duty's question — it shared exactly one token with it, the stopword "wenn" — and the five exceptions
+were indistinguishable from each other, all scoring `0.61`–`0.92` on the `contradictory` question by
+matching each other's vocabulary. The corpus is now cut along the Absätze, 8 chunks instead of 14,
+each duty carrying the exception that limits it. `art50-deepfake` already did this inline and was the
+precedent. The provenance tests were not touched and still pass: the re-cut is verbatim and still
+accounts for the whole source in order.
+
+The cost is citation granularity: a citation points at a duty together with its carve-out rather than
+either alone. For an audit-grade system that is arguably the right unit, since a duty is never shown
+without what limits it, but it is a real loss of precision and it was a choice.

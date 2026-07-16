@@ -8,6 +8,16 @@ which carries the retrieval URL, date and SHA-256 in its sibling `.provenance.js
 Regenerate the snapshot with `pnpm exec tsx scripts/fetch-corpus-source.ts --article 50
 --slug eu-ai-act-art50-de`.
 
+**A duty is chunked together with the exception that limits it.** The unit of retrieval is the
+legal unit, not the sentence. Article 50 states each obligation and then narrows it with a
+counter-clause that names its subject anaphorically — "Diese Pflicht gilt nicht …" — so an
+exception cut into its own chunk is unreachable from any question phrased in its duty's words, and
+indistinguishable from the four other exceptions that open with the same five words. Retrieval could
+then serve a duty without its carve-out, which is the same misrepresentation
+`corpus-provenance.unit.test.ts` already guards the corpus against: verbatim text minus a clause is
+still not the law. Splitting these cost citation precision nothing and cost correctness everything,
+so the cut follows the Absätze.
+
 <!-- chunk:art50-interaction -->
 Die Anbieter stellen sicher, dass KI-Systeme, die für die direkte Interaktion
 mit natürlichen Personen bestimmt sind, so konzipiert und entwickelt werden,
@@ -16,7 +26,6 @@ einem KI-System interagieren, es sei denn, dies ist aus Sicht einer angemessen
 informierten, aufmerksamen und verständigen natürlichen Person aufgrund der
 Umstände und des Kontexts der Nutzung offensichtlich.
 
-<!-- chunk:art50-interaction-law-enforcement-exception -->
 Diese Pflicht gilt nicht für gesetzlich zur Aufdeckung, Verhütung, Ermittlung
 oder Verfolgung von Straftaten zugelassene KI-Systeme, wenn geeignete
 Schutzvorkehrungen für die Rechte und Freiheiten Dritter bestehen, es sei
@@ -30,7 +39,6 @@ erzeugen, stellen sicher, dass die Ausgaben des KI-Systems in einem
 maschinenlesbaren Format gekennzeichnet und als künstlich erzeugt oder
 manipuliert erkennbar sind.
 
-<!-- chunk:art50-marking-state-of-the-art -->
 Die Anbieter sorgen dafür, dass — soweit technisch möglich — ihre technischen
 Lösungen wirksam, interoperabel, belastbar und zuverlässig sind und
 berücksichtigen dabei die Besonderheiten und Beschränkungen der verschiedenen
@@ -38,7 +46,6 @@ Arten von Inhalten, die Umsetzungskosten und den allgemein anerkannten Stand
 der Technik, wie er in den einschlägigen technischen Normen zum Ausdruck
 kommen kann.
 
-<!-- chunk:art50-marking-exception -->
 Diese Pflicht gilt nicht, soweit die KI-Systeme eine unterstützende Funktion
 für die Standardbearbeitung ausführen oder die vom Betreiber bereitgestellten
 Eingabedaten oder deren Semantik nicht wesentlich verändern oder wenn sie zur
@@ -52,7 +59,6 @@ Personen über den Betrieb des Systems und verarbeiten personenbezogene Daten
 gemäß den Verordnungen (EU) 2016/679 und (EU) 2018/1725 und der Richtlinie
 (EU) 2016/680.
 
-<!-- chunk:art50-emotion-biometric-exception -->
 Diese Pflicht gilt nicht für gesetzlich zur Aufdeckung, Verhütung oder
 Ermittlung von Straftaten zugelassene KI-Systeme, die zur biometrischen
 Kategorisierung und Emotionserkennung im Einklang mit dem Unionsrecht
@@ -66,7 +72,6 @@ künstlich erzeugt oder manipuliert wurden. Diese Pflicht gilt nicht, wenn die
 Verwendung zur Aufdeckung, Verhütung, Ermittlung oder Verfolgung von
 Straftaten gesetzlich zugelassen ist.
 
-<!-- chunk:art50-deepfake-artistic -->
 Ist der Inhalt Teil eines offensichtlich künstlerischen, kreativen,
 satirischen, fiktionalen oder analogen Werks oder Programms, so beschränken
 sich die in diesem Absatz festgelegten Transparenzpflichten darauf, das
@@ -80,7 +85,6 @@ veröffentlicht wird, um die Öffentlichkeit über Angelegenheiten von
 öffentlichem Interesse zu informieren, müssen offenlegen, dass der Text
 künstlich erzeugt oder manipuliert wurde.
 
-<!-- chunk:art50-editorial-exception -->
 Diese Pflicht gilt nicht, wenn die Verwendung zur Aufdeckung, Verhütung,
 Ermittlung oder Verfolgung von Straftaten gesetzlich zugelassen ist oder wenn
 die durch KI erzeugten Inhalte einem Verfahren der menschlichen Überprüfung
