@@ -50,6 +50,20 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   Mutation-falsified three ways: the exact historical paraphrase re-inserted (caught), the snapshot
   edited while chunks stayed substrings (caught — only the hash sees that), and the counter-exception
   deleted with everything else left verbatim (caught only by reconstruction).
+
+  **Reopened and re-closed 2026-07-16: chunk ids had to become unique across the corpus.** The gate
+  above kept a `Map` keyed on chunk id while the runtime kept an array, so a repeated id collapsed
+  in the gate and survived in the corpus. Verified by injecting a second `<!-- chunk:art50-marking
+  -->` whose invented text turns Article 50's marking duty into a discretion: 15 chunks loaded, two
+  under that id, the fabrication citable and signable — all four tests green. Both now read the
+  corpus through one `parseFixtureChunks`.
+  The first fix was still too narrow, and the audit caught that too: it was per-FILE. Two files
+  each carrying `<!-- chunk:dup -->` — one harmless, one fabricated banking text — got the
+  out-of-corpus CRR question ANSWERED, because the fabrication opened the refusal gate while the
+  citation displayed the *other* file's sentence. `reciprocalRankFusion` keys on chunk id, so the
+  two texts fused into one entry. An answer whose gate was opened by text it does not cite is the
+  exact failure this project exists to make impossible. `loadFixtureCorpus` now rejects duplicate
+  ids across the whole corpus and names both files.
   Discovery: the fixture header and the public demo both claimed "Auszug aus Artikel 50 der
   EU-KI-Verordnung"; one chunk had widened an exception's scope from a single duty to all
   transparency duties and dropped a counter-exception outright. The demo string did not need
@@ -69,6 +83,17 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   short enough that the CRR question scored `0.300` against the `0.3` threshold on `die`/`fuer`/`im`
   alone and was answered; the verbatim (longer) text pushed it over.
   Mutation-falsified three times (flat weights; constant unseen-term IDF; additive length bonus).
+
+  **Closed wrongly TWICE on 2026-07-16, the second time inside the retraction of the first.** The
+  re-close shipped a fresh false numeric comment in `retrieval.unit.test.ts`: it quoted the margin
+  sequence as `0.196 → 0.195 → 0.195 → 0.214` where the run gives `0.1957 → 0.1928 → 0.1951 →
+  0.2138`, and the "before" figures beside it came from the alien-vocabulary sweep, not the German
+  one the test actually runs. Caught by a second cross-vendor audit, in the very commit whose
+  purpose was to retract a false numeric claim. Same defect class, same hour.
+  The fix is structural, not another correction: **no measured sequence is quoted in a comment any
+  more.** Numbers that matter are `expect`ed — the sweep now pins both endpoints — because a number
+  in a comment is owned by no check and rots the moment the fixture moves. That, not the arithmetic,
+  is what went wrong both times.
 
   **Closed once wrongly, on 2026-07-16.** The first close asserted "the margin widens as the corpus
   grows" and merged it to `main` in code comments, this file, `docs/eval-harness.md` and the PR body.

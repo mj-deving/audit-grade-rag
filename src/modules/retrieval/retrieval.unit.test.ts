@@ -159,9 +159,14 @@ describe("refusal under corpus growth", () => {
       return threshold - outScore;
     });
 
-    // Monotonic non-erosion. Under the additive length bonus this ran 0.114 → 0.026 → -0.069 →
-    // -0.105, and the sign flip IS the defect: a negative margin means the demo answered a banking
-    // question by citing the AI Act as its evidence. It now runs 0.196 → 0.195 → 0.195 → 0.214.
+    // Non-erosion, with 0.01 of slack for the dip at 24 chunks.
+    //
+    // No measured sequence is quoted here. The first version of this comment quoted one, it was
+    // wrong (it read 0.195 where the run gives 0.193, and its "before" figures came from a
+    // different sweep than this test runs), and the audit caught it — in the very commit that
+    // exists to retract a false numeric comment. Numbers in a comment are unowned by any check and
+    // rot the moment the fixture moves. If a number matters, it belongs in an assertion, so the
+    // fixed points below are asserted rather than narrated.
     for (const [index, margin] of margins.entries()) {
       const previous = margins[index - 1];
       if (previous !== undefined) {
@@ -171,5 +176,13 @@ describe("refusal under corpus growth", () => {
         ).toBeGreaterThan(previous - 0.01);
       }
     }
+
+    // The endpoints, pinned. A relation alone would still pass if every score drifted together,
+    // and drift is exactly how the additive bonus hid: it moved all of them at once.
+    expect(margins.at(0) ?? 0).toBeCloseTo(0.1957, 3);
+    expect(margins.at(-1) ?? 0).toBeCloseTo(0.2138, 3);
+    // Growth must end better than it started, which is the property H-10 originally claimed and
+    // could not back.
+    expect(margins.at(-1) ?? 0).toBeGreaterThan(margins.at(0) ?? 0);
   });
 });
