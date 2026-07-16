@@ -28,6 +28,13 @@ const outOfCorpusQuestion =
   "Welche Eigenkapitalquote verlangt die CRR fuer Sparkassen im Jahr 2030?";
 const coveredQuestion =
   "Welche Pflichten gelten fuer die direkte Interaktion mit natuerlichen Personen und fuer Ausgaben in einem maschinenlesbaren Format?";
+// Verbatim from `eval/golden/v1.jsonl` (`art50-ambiguous-text-disclosure`), and verbatim on purpose:
+// the first draft of these tests used a shortened paraphrase of it, which the corpus REFUSES. It
+// scores 0.331 against the 0.3 bar and dropping the single word "veroeffentlicht" puts it under.
+// Inventing a question that happens to pass is how a test starts measuring the author instead of the
+// system. (The narrowness of that margin is H-11's problem, not this file's.)
+const dutyWithExceptionQuestion =
+  "Muss jeder KI-generierte Text offengelegt werden, wenn er veroeffentlicht wird?";
 
 // German legal prose from other domains: ordinary stopword density, nothing about capital ratios.
 // This is what growing the corpus actually looks like (H-1 wants 100+ cases over more law), as
@@ -77,7 +84,12 @@ describe("inverseDocumentFrequencies", () => {
     expect(ubiquitous).toBeDefined();
     expect(ubiquitous ?? 0).toBeGreaterThan(0);
     expect(ubiquitous ?? 0).toBeLessThan(0.2);
-    expect(rare).toBeGreaterThan(3);
+    // The RATIO is the property; the absolute value is a fixture detail. This asserted `rare > 3`
+    // until the corpus was re-cut from 14 chunks to 8, and then failed at 2.890 — which is exactly
+    // `ln(18)`, i.e. `unseenTermIdf` at 8 chunks. The constant silently encoded the corpus size,
+    // because every IDF here grows like `ln(corpusSize)`. A fixture that is allowed to move must not
+    // be pinned by a number that only holds at one of its sizes.
+    expect(rare).toBeGreaterThan((ubiquitous ?? 0) * 20);
   });
 
   it("prices an unseen term against the real corpus size, not a constant", async () => {
@@ -139,6 +151,98 @@ describe("out-of-corpus refusal", () => {
   });
 });
 
+describe("a citation clears the same bar as the gate", () => {
+  // H-15. `0.3` used to be a query-level gate only — it asked "is there ANY evidence?" of the best
+  // candidate, while `finalChunks` returned topK regardless of each chunk's own score. So a chunk at
+  // 0.265 was simultaneously not-evidence (it would have refused the query had it ranked first) and
+  // evidence (rendered into the prompt, validated against, signed into the ledger as a citation).
+  it("never returns a chunk that would itself have been refused", async () => {
+    const chunks = await corpus();
+    for (const question of [coveredQuestion, dutyWithExceptionQuestion]) {
+      const trace = retrieveChunks(question, chunks, options);
+      expect(trace.outOfCorpus, `${question}: must be answerable`).toBe(false);
+      expect(trace.finalChunks.length, `${question}: must cite something`).toBeGreaterThan(0);
+      for (const cited of trace.finalChunks) {
+        // Re-derive each cited chunk's own evidence score the way the gate does, from the ranker
+        // passes rather than the post-fusion value.
+        const own = Math.max(
+          0,
+          ...[...trace.vectorCandidates, ...trace.bm25Candidates]
+            .filter((candidate) => candidate.chunkId === cited.chunkId)
+            .map((candidate) => candidate.retrievalScore),
+        );
+        expect(
+          own,
+          `${question}: cited ${cited.chunkId} below the evidence bar`,
+        ).toBeGreaterThanOrEqual(threshold);
+      }
+    }
+  });
+
+  it("filters on the evidence score, not the fused rank score", async () => {
+    // The trap this fix could have walked into. `finalChunks` carries RRF scores (~0.016-0.032, i.e.
+    // 1/(60+rank)), not the [0,1] evidence score. Filtering `retrievalScore` after fusion against 0.3
+    // would drop every chunk on every query and refuse the entire corpus — while looking correct.
+    const trace = retrieveChunks(coveredQuestion, await corpus(), options);
+    expect(trace.finalChunks.length).toBeGreaterThan(0);
+    for (const chunk of trace.finalChunks) {
+      expect(chunk.retrievalScore, "post-fusion scores live on the RRF scale").toBeLessThan(0.1);
+    }
+  });
+
+  it("cites nothing at all when it refuses", async () => {
+    // A refusal that still hands back eight sub-threshold chunks is the same contradiction wearing a
+    // different hat.
+    const trace = retrieveChunks(outOfCorpusQuestion, await corpus(), options);
+    expect(trace.outOfCorpus).toBe(true);
+    expect(trace.finalChunks).toHaveLength(0);
+  });
+});
+
+describe("a duty is never retrievable without its exception", () => {
+  // The corpus-level half of H-15, and the reason the filter could land at all. Article 50 states an
+  // obligation and then narrows it with "Diese Pflicht gilt nicht …", naming its subject
+  // anaphorically. Cut into its own chunk, such an exception shares ONE token with any question
+  // phrased in its duty's words ("wenn", a stopword) and is indistinguishable from the four other
+  // exceptions opening with the same five words. Measured before the re-cut: "Muss jeder KI-generierte
+  // Text offengelegt werden, wenn er veroeffentlicht wird?" scored the duty at 0.3286 and its
+  // editorial exception at 0.0491, so filtering citations to the bar dropped the exception out of the
+  // prompt entirely and the only answer left was "yes, disclose" — a misrepresentation of the law on
+  // the one golden case built to test duty-versus-exception.
+  it("has no chunk that opens with a bare anaphor", async () => {
+    for (const chunk of await corpus()) {
+      expect(
+        chunk.chunkText.trim(),
+        `${chunk.chunkId} opens by referring to a duty it does not contain`,
+      ).not.toMatch(/^(Diese Pflicht gilt nicht|Ist der Inhalt)/u);
+    }
+  });
+
+  it("keeps the editorial exception in the same chunk as the duty it limits", async () => {
+    const chunks = await corpus();
+    const duty = chunks.find((chunk) => chunk.chunkId === "art50-public-interest-text");
+    expect(duty, "art50-public-interest-text must exist").toBeDefined();
+    expect(duty?.chunkText).toMatch(/Diese Pflicht gilt nicht/u);
+    expect(duty?.chunkText).toMatch(/redaktionelle Verantwortung/u);
+  });
+
+  it("answers the duty question with the exception present in the cited text", async () => {
+    // End to end: the question that broke, against the re-cut corpus, through the filter.
+    const trace = retrieveChunks(
+      "Muss jeder KI-generierte Text offengelegt werden, wenn er veroeffentlicht wird?",
+      await corpus(),
+      options,
+    );
+    expect(trace.outOfCorpus).toBe(false);
+    const ids = trace.finalChunks.map((chunk) => chunk.chunkId);
+    expect(ids).toContain("art50-public-interest-text");
+    const cited = trace.finalChunks.find((chunk) => chunk.chunkId === "art50-public-interest-text");
+    expect(cited?.chunkText, "the carve-out must reach the prompt with the duty").toMatch(
+      /Diese Pflicht gilt nicht/u,
+    );
+  });
+});
+
 describe("refusal under corpus growth", () => {
   // THE property this file exists for. The shipped claim was "the margin widens as the corpus
   // grows". It lived in a comment, was never probed, and was backwards. Growth is exactly the
@@ -159,30 +263,33 @@ describe("refusal under corpus growth", () => {
       return threshold - outScore;
     });
 
-    // Non-erosion, with 0.01 of slack for the dip at 24 chunks.
+    // The FLOOR is the property, and no trend is asserted, because the margin has no trend: it dips
+    // and recovers. Measured over this sweep it runs 0.2195 → 0.2048 → 0.1969 → 0.2140, and out to
+    // 2008 chunks it reaches 0.2306.
     //
-    // No measured sequence is quoted here. The first version of this comment quoted one, it was
-    // wrong (it read 0.195 where the run gives 0.193, and its "before" figures came from a
-    // different sweep than this test runs), and the audit caught it — in the very commit that
-    // exists to retract a false numeric comment. Numbers in a comment are unowned by any check and
-    // rot the moment the fixture moves. If a number matters, it belongs in an assertion, so the
-    // fixed points below are asserted rather than narrated.
+    // This block previously asserted non-erosion with 0.01 of slack plus `margins.at(-1) >
+    // margins.at(0)` — "growth must end better than it started". Both were wrong in the same way, and
+    // the way is instructive: that last line is a weakened restatement of the false H-10 claim this
+    // file exists to prevent. It passed only because the four sweep points and the 14-chunk fixture
+    // happened to make it true. Re-cutting the corpus to 8 chunks broke it (0.2195 → 0.2140, ending
+    // 0.0055 BELOW where it started) without anything about the refusal getting worse — the refusal
+    // in fact got stronger at every size. An assertion that fails when the thing it guards improves
+    // is measuring the fixture, not the property.
+    //
+    // What the demo actually promises is that an unevidenced question is refused. So what gets
+    // asserted is that the refusal never approaches the bar at any corpus size: margin > 0.19 means
+    // the CRR question never scores above 0.11, roughly a third of the 0.3 threshold. That holds
+    // whether or not the margin happens to widen.
     for (const [index, margin] of margins.entries()) {
-      const previous = margins[index - 1];
-      if (previous !== undefined) {
-        expect(
-          margin,
-          `margin must not erode as the corpus grows (step ${String(index)})`,
-        ).toBeGreaterThan(previous - 0.01);
-      }
+      expect(
+        margin,
+        `refusal margin must stay clear of the bar at every corpus size (step ${String(index)})`,
+      ).toBeGreaterThan(0.19);
     }
 
-    // The endpoints, pinned. A relation alone would still pass if every score drifted together,
-    // and drift is exactly how the additive bonus hid: it moved all of them at once.
-    expect(margins.at(0) ?? 0).toBeCloseTo(0.1957, 3);
-    expect(margins.at(-1) ?? 0).toBeCloseTo(0.2138, 3);
-    // Growth must end better than it started, which is the property H-10 originally claimed and
-    // could not back.
-    expect(margins.at(-1) ?? 0).toBeGreaterThan(margins.at(0) ?? 0);
+    // The endpoints, pinned and measured. A floor alone would still pass if every score drifted
+    // together, and drift is exactly how the additive bonus hid: it moved all of them at once.
+    expect(margins.at(0) ?? 0).toBeCloseTo(0.2195, 3);
+    expect(margins.at(-1) ?? 0).toBeCloseTo(0.214, 3);
   });
 });

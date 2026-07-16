@@ -104,36 +104,83 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   paid out for matching stopwords. **Nothing tested the claim**: the tests asserted a relation at one
   corpus size (14 chunks) while the growth property lived only in a comment. The lesson is the rule
   this repo already had — a claim without a probe is "should work" — and a comment is not a probe.
-  The sweep in `retrieval.unit.test.ts` now tests it at 14/24/64/314 chunks.
+  The sweep in `retrieval.unit.test.ts` now tests it at 8/18/58/308 chunks.
+
+  **And the first replacement assertion was wrong too**, which is the deeper half of the lesson. The
+  retraction pinned the sweep with `margins.at(-1) > margins.at(0)` — "growth ends better than it
+  started" — a weakened restatement of the same false claim, true only for those four sweep points on
+  a 14-chunk fixture. The H-15 re-cut (14 → 8 chunks) broke it while the refusal got *stronger* at
+  every size. An assertion that fails when the thing it guards improves is measuring the fixture. The
+  sweep now asserts a floor — the CRR question never scores above a third of the bar at any corpus
+  size — and asserts no trend, because the margin has none: it dips and recovers.
 
   Caveat, measured and not claimed away: the guarantee is bounded. Growth in the same language widens
-  the margin (`0.104` → `0.069` over 14 → 2014 chunks). Growth with alien vocabulary erodes it
-  (`0.274` at 2000 synthetic chunks — refused, but close), because `base` is a ratio of IDF sums and
-  drifts toward the query's plain matched-token fraction, which for this question is `3/10` — the
-  threshold exactly. See `docs/eval-harness.md`. Mixed-language corpora are the case to watch; H-11.
-- [ ] H-15 (One threshold, one meaning): a chunk cited as evidence clears the same bar that decides
-  whether evidence exists at all. Needs a design decision from Marius, not a default from me.
+  the margin (the CRR question scores `0.080` → `0.069` over 8 → 2008 chunks). Growth with alien
+  vocabulary erodes it (`0.283` at 2000 added synthetic chunks — refused, but closer), because `base`
+  is a ratio of IDF sums and drifts toward the query's plain matched-token fraction, which for this
+  question is `3/10` — the threshold exactly. See `docs/eval-harness.md`. Mixed-language corpora are
+  the case to watch; H-11. (Every figure in this paragraph was re-measured after the H-15 re-cut; the
+  previous ones were taken against the 14-chunk corpus and were stale the moment it moved. Numbers in
+  prose are owned by nothing.)
+- [x] H-15 (One threshold, one meaning): a chunk cited as evidence clears the same bar that decides
+  whether evidence exists at all.
   Falsifier: an answered question cites a chunk whose own score would have been refused as
   out-of-corpus had it been the best candidate.
-  Open. Found by the third cross-vendor audit (gpt-5.5, 2026-07-16). `0.3` is applied at the QUERY
-  level — "is there any evidence?" — while `finalChunks` returns `topK` regardless of each chunk's
-  own score. So a chunk at `0.265` is simultaneously not-evidence (if best) and evidence (as a
-  citation). Measured on "Wie muessen synthetische Inhalte gekennzeichnet werden?": gate opened by
-  `art50-marking` at `0.487`, and the answer also cites `art50-deepfake` (`0.265`) and
+  Closed 2026-07-16 **on the in-memory fixture path only** (the served Postgres path is H-14 and is
+  untouched). `retrieveChunks` now filters `finalChunks` to the same threshold the gate uses, and a
+  refusal returns no chunks at all. Probes: `retrieval.unit.test.ts` › "a citation clears the same bar
+  as the gate" (3 tests) and › "a duty is never retrievable without its exception" (3 tests). All six
+  were mutation-falsified: removing the filter reproduces the original defect
+  (`cited art50-first-contact-accessibility below the evidence bar: expected 0.218509 to be >= 0.3`).
+  Found by the third cross-vendor audit (gpt-5.5, 2026-07-16). `0.3` was applied at the QUERY level —
+  "is there any evidence?" — while `finalChunks` returned `topK` regardless of each chunk's own score.
+  So a chunk at `0.265` was simultaneously not-evidence (if best) and evidence (as a citation).
+  Measured on "Wie muessen synthetische Inhalte gekennzeichnet werden?": gate opened by
+  `art50-marking` at `0.487`, and the answer also cited `art50-deepfake` (`0.265`) and
   `art50-first-contact-accessibility` (`0.270`).
   **Pre-existing in class, made worse by me in degree.** Before the H-10 length-bonus fix those two
   scored `0.321` and `0.342` — above the bar — and only the 4th-ranked chunk sat below it. The
   multiplicative bonus rescaled every score downward while `0.3` stayed put, taking this question
   from zero sub-threshold citations to two.
   Not the same class as the duplicate-id blocker, and the difference matters: there, the gate was
-  opened by text the citation did not show, which is a provenance lie. Here every cited chunk is
-  real, retrieved, and does contain the claim extracted from it. This is an internal inconsistency
+  opened by text the citation did not show, which is a provenance lie. Here every cited chunk was
+  real, retrieved, and did contain the claim extracted from it. This was an internal inconsistency
   in what "evidence" means, not a fabrication.
-  Resolution is a genuine design call with a visible cost either way — filter `finalChunks` to the
-  bar (answers get thinner, and `expected_chunks` in the golden set may move), give citations their
-  own lower bar (two constants to keep honest), or state that `0.3` is a query gate and ranking is
-  ranking (cheapest, but the demo's own copy has to stop implying otherwise). Related: H-14 is the
-  same shape — one constant carrying more than one meaning.
+
+  **The filter alone would have made the product worse, and the measurement is why it did not ship
+  alone.** Applied to the corpus as it was cut, `pnpm eval` went to `citation-accuracy: 0.8`,
+  `passed: false`. One case regressed — the one tagged `ambiguous`: "Muss jeder KI-generierte Text
+  offengelegt werden, wenn er veroeffentlicht wird?" kept `art50-public-interest-text` (the DUTY,
+  `0.3286`) and dropped `art50-editorial-exception` (the EXCEPTION, `0.0491`). Since `renderPrompt`
+  reads `finalChunks`, the exception was not merely uncited, it was absent from the model's prompt,
+  leaving "yes, disclose" as the only available answer. That is a misrepresentation of Article 50 on
+  the single golden case built to test duty-versus-exception, and it is the same shape
+  `corpus-provenance.unit.test.ts` already guards the corpus against: verbatim text minus a clause is
+  still not the law. An internal inconsistency traded for an external wrongness is a bad trade;
+  correctness outranks consistency.
+  **Root cause was the chunking, not the scorer.** Article 50 states a duty and then narrows it with
+  a counter-clause naming its subject anaphorically. Four of the five exception chunks opened with the
+  identical string "Diese Pflicht gilt nicht", the fifth with "Ist der Inhalt"; none named the duty it
+  limited. Two measured consequences: an exception was unreachable from its own duty's question (it
+  shared exactly ONE token with it — "wenn", a stopword), and the exceptions were mutually
+  indistinguishable — on the `contradictory` question all five scored `0.61`–`0.92` by matching each
+  other's vocabulary. So the corpus was re-cut along the Absätze: **14 chunks → 8**, each duty
+  carrying the exception that limits it. `art50-deepfake` already did this inline and was the
+  precedent. The four `corpus provenance` tests pass unmodified — the re-cut is still verbatim and
+  still accounts for the whole source in order.
+  With both changes, `pnpm eval` is `passed: true` at citation-accuracy `1.0`, and the filter is
+  demonstrably doing work rather than passing vacuously: survivors per golden case are 2, 1, 1, 5 and
+  0 out of a possible 8.
+  **What this cost:** citation granularity. A citation now points at a duty together with its
+  carve-out rather than at either alone. For an audit-grade product that is arguably the better unit —
+  a duty is never displayed without what limits it — but it is a real loss of precision and it is a
+  choice, not a free win.
+  **What it exposed, and did not fix:** retrieval leans on the model more than the retriever. Before
+  the re-cut, `topK=8` against a 14-chunk corpus returned 57% of the corpus for every query and the
+  model selected; citation-accuracy of `1.0` was partly an artifact of that dump. The margins are also
+  thin: the `ambiguous` question clears the bar at `0.331`, and deleting the single word
+  "veroeffentlicht" from it drops it under. That is H-11. Related: H-14 is the same shape as the
+  original defect — one constant carrying more than one meaning.
 - [ ] H-14 (The Postgres path's refusal threshold means something): the served API path refuses an
   out-of-corpus question, verified against a real question rather than gibberish.
   Falsifier: ask `retrievePostgresChunks` the CRR question against the Article 50 snapshot and watch
@@ -153,17 +200,33 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   - The only probe is `"zzzz yyyyy xxxx"` (`acceptance.postgres-ingest.integration.test.ts:172`) —
     noise that yields an empty tsquery. It cannot distinguish a working gate from an absent one.
   Found by the same cross-vendor audit as the H-10 retraction.
-- [ ] H-13 (The required check is not load-flaky): no unit test spawns a subprocess under the unit
+- [x] H-13 (The required check is not load-flaky): no unit test spawns a subprocess under the unit
   project's 5s default timeout. Falsifier: run `pnpm check:fast` under CPU contention and watch a
   timeout fail the build.
-  Open, pre-existing. Surfaced by the cross-vendor audit, which saw
-  `acceptance.eval-report-ui-security.unit.test.ts:101` and `:137` time out at 5000ms while running
-  concurrently with other work. Both pass here — measured at 2194ms and 2056ms, green in 6 of 6
-  runs — so the "check:full green" claims on this wave's commits hold. But they shell out to
-  `pnpm eval` and `pnpm report` inside the *unit* project, leaving ~2.3x margin on a 5s default,
-  which is not enough for a required status check on a shared runner. Fix path: move them to the
-  integration project (30s timeout, already used for exactly this kind of test) or give them an
-  explicit timeout.
+  Closed 2026-07-16. The six subprocess/ingest tests in
+  `acceptance.eval-report-ui-security.unit.test.ts` carry an explicit 30s timeout; the other three are
+  synchronous and keep the 5s default. Verified against the falsifier on the same loaded machine that
+  produced the failures below: five consecutive runs at the DEFAULT timeout, 9 of 9 green each time.
+  The file stays in the `unit` project deliberately — moving it to `integration`, the other fix path,
+  would have dropped it out of `check:fast` and called that a fix.
+  Was open and pre-existing, and **the falsifier fired**. Surfaced by the cross-vendor audit, which
+  saw `acceptance.eval-report-ui-security.unit.test.ts:101` and `:137` time out at 5000ms while
+  running concurrently with other work. They were green in 6 of 6 runs when first investigated, at
+  2194ms and 2056ms.
+  Reproduced under real CPU contention on 2026-07-16, on a **clean `origin/main` worktree with no
+  local changes**, three consecutive runs of the same untouched code: 4 failed, 5 failed, 3 failed of
+  9 — every failure `Test timed out in 5000ms`. A fourth run passed 9 of 9. Same code, different
+  outcome per run, which is the definition of the defect. At `--testTimeout=30000` all 9 pass. The
+  measurement matters beyond this item: during the H-15 work these timeouts appeared in the suite and
+  looked exactly like a regression, and the only way to tell was to run untouched `main` beside it.
+  A flaky required check does not merely fail builds, it launders real regressions as noise and noise
+  as regressions.
+  They shell out to `pnpm eval` and `pnpm report` inside the *unit* project, leaving ~2.3x margin on a
+  5s default, which is not enough for a required status check on a shared runner.
+  Fixed in its own commit rather than bundled into H-15, because it is a separate criterion and
+  bundling it would have hidden it. It stopped being deferrable when it blocked the H-15 commit twice
+  through the pre-commit hook — the honest options there were to fix the gate or to bypass it with
+  `--no-verify`, and weakening a gate to get past it is how gates die.
 - [ ] H-12 (The ledger attests the corpus, not its name): `corpusSnapshotHash` — carried by fixture
   chunks, eval outcomes and every demo ledger row — is recomputable from the corpus it claims to
   pin. Falsifier: change a byte of the corpus and the hash the ledger records does not move.
