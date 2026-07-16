@@ -111,6 +111,29 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   (`0.274` at 2000 synthetic chunks — refused, but close), because `base` is a ratio of IDF sums and
   drifts toward the query's plain matched-token fraction, which for this question is `3/10` — the
   threshold exactly. See `docs/eval-harness.md`. Mixed-language corpora are the case to watch; H-11.
+- [ ] H-15 (One threshold, one meaning): a chunk cited as evidence clears the same bar that decides
+  whether evidence exists at all. Needs a design decision from Marius, not a default from me.
+  Falsifier: an answered question cites a chunk whose own score would have been refused as
+  out-of-corpus had it been the best candidate.
+  Open. Found by the third cross-vendor audit (gpt-5.5, 2026-07-16). `0.3` is applied at the QUERY
+  level — "is there any evidence?" — while `finalChunks` returns `topK` regardless of each chunk's
+  own score. So a chunk at `0.265` is simultaneously not-evidence (if best) and evidence (as a
+  citation). Measured on "Wie muessen synthetische Inhalte gekennzeichnet werden?": gate opened by
+  `art50-marking` at `0.487`, and the answer also cites `art50-deepfake` (`0.265`) and
+  `art50-first-contact-accessibility` (`0.270`).
+  **Pre-existing in class, made worse by me in degree.** Before the H-10 length-bonus fix those two
+  scored `0.321` and `0.342` — above the bar — and only the 4th-ranked chunk sat below it. The
+  multiplicative bonus rescaled every score downward while `0.3` stayed put, taking this question
+  from zero sub-threshold citations to two.
+  Not the same class as the duplicate-id blocker, and the difference matters: there, the gate was
+  opened by text the citation did not show, which is a provenance lie. Here every cited chunk is
+  real, retrieved, and does contain the claim extracted from it. This is an internal inconsistency
+  in what "evidence" means, not a fabrication.
+  Resolution is a genuine design call with a visible cost either way — filter `finalChunks` to the
+  bar (answers get thinner, and `expected_chunks` in the golden set may move), give citations their
+  own lower bar (two constants to keep honest), or state that `0.3` is a query gate and ranking is
+  ranking (cheapest, but the demo's own copy has to stop implying otherwise). Related: H-14 is the
+  same shape — one constant carrying more than one meaning.
 - [ ] H-14 (The Postgres path's refusal threshold means something): the served API path refuses an
   out-of-corpus question, verified against a real question rather than gibberish.
   Falsifier: ask `retrievePostgresChunks` the CRR question against the Article 50 snapshot and watch
