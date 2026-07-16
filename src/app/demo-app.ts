@@ -103,12 +103,21 @@ export type DemoAppOptions = {
  * Questions worded to match the corpus. `foldGerman` keeps retrieval umlaut-agnostic, so these match
  * whether typed with umlauts or transliterated. The last one has no answer in the corpus on purpose:
  * the demo has to be able to show a refusal, not only a hit.
+ *
+ * "Worded to match" is a hard constraint here, not a style note. Retrieval on this surface is
+ * lexical with no stemming (see docs/eval-harness.md), so a question has to share actual words with
+ * the text. The law-enforcement example used to read "Welche Ausnahme gilt für die
+ * Strafverfolgung?", which shares none — the corpus says "Diese Pflicht gilt nicht" and "Verfolgung
+ * von Straftaten", never "Ausnahme" or "Strafverfolgung". It only ever appeared to work because the
+ * pre-IDF scorer answered on stopword overlap and cited half the corpus for every question. Under
+ * evidence-weighted scoring it scored 0.196 against the 0.3 threshold — statistically level with
+ * the CRR question that is deliberately not in the corpus at all.
  */
 const demoExamples: readonly string[] = [
   "Muss offengelegt werden, dass ein Text künstlich erzeugt wurde?",
   "Wie müssen synthetische Inhalte gekennzeichnet werden?",
   "Wann müssen Personen über die Interaktion informiert werden?",
-  "Welche Ausnahme gilt für die Strafverfolgung?",
+  "Gilt die Pflicht auch für KI-Systeme zur Verfolgung von Straftaten?",
   "Welche Eigenkapitalquote verlangt die CRR für Sparkassen im Jahr 2030?",
 ];
 
