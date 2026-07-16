@@ -1,7 +1,8 @@
 import { startObservation } from "@langfuse/tracing";
-import { Pool } from "pg";
+import type { Pool } from "pg";
 import type { AnswerOutcome, CorpusChunk, QueryResult } from "../domain/types.js";
 import { sha256Hex, stableId } from "../lib/hash.js";
+import { createPgPool } from "../lib/pg-pool.js";
 import type { Clock } from "../lib/time.js";
 import { systemClock } from "../lib/time.js";
 import { AuditLedger } from "../modules/audit/ledger.js";
@@ -115,7 +116,7 @@ export function createPostgresRuntimeApp(
   const clock = options.clock ?? systemClock;
   const ledger = new AuditLedger(clock, options.ledgerPath);
   const auth = new AuthService(ledger, clock);
-  const pool = options.pool ?? new Pool({ connectionString: options.databaseUrl });
+  const pool = options.pool ?? createPgPool(options.databaseUrl);
   const ownsPool = options.pool === undefined;
   const ingest = createPostgresIngest(options, ledger, clock, pool);
   return {

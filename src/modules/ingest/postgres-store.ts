@@ -1,11 +1,13 @@
-import { Pool, type PoolClient } from "pg";
+import type { Pool, PoolClient } from "pg";
 import type { CorpusChunk, CorpusSnapshot } from "../../domain/types.js";
 import { sha256Hex, stableId } from "../../lib/hash.js";
+import { createPgPool } from "../../lib/pg-pool.js";
 import type { Clock } from "../../lib/time.js";
 import { systemClock } from "../../lib/time.js";
 import type { AuditLedger } from "../audit/ledger.js";
 import {
   type EmbeddingProvider,
+  type EmbeddingVector,
   estimateHnswIndexBytes,
   pgVectorLiteral,
   requireConfiguredEmbeddingProvider,
@@ -44,7 +46,7 @@ export class PostgresIngestionStore {
   private schemaReady = false;
 
   constructor(private readonly options: PostgresIngestionStoreOptions) {
-    this.pool = options.pool ?? new Pool({ connectionString: options.databaseUrl });
+    this.pool = options.pool ?? createPgPool(options.databaseUrl);
     this.ownsPool = options.pool === undefined;
     this.embeddingProvider = options.embeddingProvider ?? requireConfiguredEmbeddingProvider();
   }
@@ -220,6 +222,11 @@ export class PostgresIngestionStore {
     warnings: readonly string[],
     failAfterExtract: boolean,
   ): Promise<IngestResult> {
+    // Embed BEFORE opening the transaction. The embedding call is network I/O with a retry
+    // budget that can exceed idle_in_transaction_session_timeout; running it inside the
+    // transaction would let Postgres terminate the ingest mid-flight exactly when the
+    // endpoint is slow or rate-limited. Only the DB writes belong in the transaction.
+    const embeddings = failAfterExtract ? [] : await embedChunks(chunks, this.embeddingProvider);
     const client = await this.pool.connect();
     try {
       await client.query("BEGIN");
@@ -232,7 +239,7 @@ export class PostgresIngestionStore {
       );
       await insertDocuments(client, snapshot.id, revisions);
       if (!failAfterExtract) {
-        await insertChunks(client, chunks, snapshot, this.embeddingProvider);
+        await insertChunks(client, chunks, snapshot, embeddings);
       }
       await client.query("COMMIT");
       if (!failAfterExtract) {
@@ -393,14 +400,29 @@ async function insertDocuments(
   }
 }
 
+async function embedChunks(
+  chunks: readonly CorpusChunk[],
+  embeddingProvider: EmbeddingProvider,
+): Promise<readonly EmbeddingVector[]> {
+  const embeddings: EmbeddingVector[] = [];
+  for (const chunk of chunks) {
+    embeddings.push(await embeddingProvider.embed(chunk.chunkText));
+  }
+  return embeddings;
+}
+
 async function insertChunks(
   client: PoolClient,
   chunks: readonly CorpusChunk[],
   snapshot: CorpusSnapshot,
-  embeddingProvider: EmbeddingProvider,
+  embeddings: readonly EmbeddingVector[],
 ): Promise<void> {
-  for (const chunk of chunks) {
-    const embedding = await embeddingProvider.embed(chunk.chunkText);
+  for (let index = 0; index < chunks.length; index += 1) {
+    const chunk = chunks[index];
+    const embedding = embeddings[index];
+    if (chunk === undefined || embedding === undefined) {
+      throw new Error("insertChunks: embeddings are misaligned with chunks");
+    }
     await client.query(
       `INSERT INTO corpus_chunks
          (chunk_id, doc_id, source_document_id, source_type, source_path, page, char_offset,
