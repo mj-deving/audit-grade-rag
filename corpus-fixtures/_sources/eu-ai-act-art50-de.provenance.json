@@ -1,0 +1,10 @@
+{
+  "regulation": "Verordnung (EU) 2024/1689",
+  "article": 50,
+  "language": "de",
+  "retrievalUrl": "https://gesetze.legal/eu/vo_eu_2024_1689/50",
+  "retrievedAt": "2026-07-16",
+  "sha256": "036d4f54d6094af39180c76b50dc55cb98da5d767ea545230e3fa49644f39223",
+  "extractor": "fetch-corpus-source.ts@1",
+  "note": "Mirror rendering, not the Official Journal. Re-derive by re-running this script and comparing sha256."
+}
