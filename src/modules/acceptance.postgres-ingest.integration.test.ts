@@ -200,6 +200,36 @@ async function runRetrievalAssertions(pool: Pool, dir: string): Promise<void> {
   ).toBe(true);
   expect(refused.outOfCorpus).toBe(true);
   assertRefusalCitesNothing(trace, refused);
+  assertH14ScaleMismatch(currentTrace, refused);
+}
+
+// H-14, pinned rather than described. These four numbers are the entire argument for why the shared
+// `0.3` bar is meaningless on this path, and they are quoted in `docs/HARDENING.md` — so they get
+// assertions, not a comment. (They had a comment until 2026-07-17. Applying ISC-23's probe to my own
+// work found them: a figure appearing in a test FILE is not a figure a test COMPUTES.)
+//
+// If any of these move, H-14's write-up is out of date and this fails, which is the intended
+// coupling: the item stays open until the scales are normalized, and its evidence stays true until
+// then.
+function assertH14ScaleMismatch(answered: RetrievalTrace, refused: RetrievalTrace): void {
+  const lexical = [...answered.bm25Candidates, ...refused.bm25Candidates].map(
+    (chunk) => chunk.retrievalScore,
+  );
+  // The finding: ts_rank_cd tops out at 0.1 against a 0.3 bar, so the lexical ranker can NEVER open
+  // the gate or clear a citation filter. The served refusal is decided by the dense score alone.
+  expect(Math.max(...lexical), "ts_rank_cd cannot reach the evidence bar").toBeLessThan(0.3);
+  expect(Math.max(...lexical)).toBeCloseTo(0.1, 5);
+  const dense = answered.vectorCandidates.map((chunk) => chunk.retrievalScore);
+  // One genuinely relevant chunk, far above the bar; everything else clustered just under it. The
+  // separation is real, but 0.3 sits only ~0.04 above the noise floor, and that placement is luck:
+  // the bar was tuned for the in-memory scorer, which is not this.
+  expect(Math.max(...dense)).toBeCloseTo(0.691897, 5);
+  expect(Math.min(...dense)).toBeCloseTo(0.259852, 5);
+  // pgvector's `<=>` is a cosine DISTANCE in [0,2], so `1 - (…)` lands in [-1,1] and goes negative.
+  expect(
+    Math.min(...refused.vectorCandidates.map((chunk) => chunk.retrievalScore)),
+    "the dense score is not bounded below by 0",
+  ).toBeLessThan(0);
 }
 
 // H-15 on the served path, the half of it that is provable on any score scale: if the system says no
