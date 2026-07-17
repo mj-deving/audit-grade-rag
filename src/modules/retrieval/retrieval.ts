@@ -80,9 +80,14 @@ export function retrieveChunks(
 
 // The evidence score of a chunk is the best score either ranker gave it, which is exactly what the
 // out-of-corpus gate reads via its max. Keeping one function for both means the gate and the citation
-// filter can never drift apart into two notions of "evidence". Exported so the Postgres path filters
-// on the same definition rather than growing a second one.
-export function bestEvidenceScores(
+// filter can never drift apart into two notions of "evidence".
+//
+// Deliberately NOT exported. It was, briefly, so `postgres-retrieval.ts` could filter citations on
+// the same definition — which sounds like consistency and is the opposite: that path's two rankers
+// score on ranges this bar was never calibrated for, and `max(dense, ts_rank_cd)` there just deletes
+// the lexical ranker (ts_rank_cd tops out at 0.1 against a 0.3 bar). Sharing the FUNCTION would have
+// hidden that the two paths do not share the SCALE. See H-14.
+function bestEvidenceScores(
   vectorCandidates: readonly RetrievedChunk[],
   bm25Candidates: readonly RetrievedChunk[],
 ): ReadonlyMap<string, number> {
