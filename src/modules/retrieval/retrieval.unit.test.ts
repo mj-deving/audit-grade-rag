@@ -324,10 +324,24 @@ describe("refusal under corpus growth", () => {
       ).toBeGreaterThan(0.19);
     }
 
-    // The endpoints, pinned and measured. A floor alone would still pass if every score drifted
-    // together, and drift is exactly how the additive bonus hid: it moved all of them at once.
-    expect(margins.at(0) ?? 0).toBeCloseTo(0.2195, 3);
-    expect(margins.at(-1) ?? 0).toBeCloseTo(0.2306, 3);
+    // The WHOLE series, pinned, because the docs quote the whole series. A floor alone would still
+    // pass if every score drifted together, and drift is exactly how the additive bonus hid: it
+    // moved all of them at once.
+    //
+    // This pinned only `at(0)` and `at(-1)` until 2026-07-17, leaving the three middle values quoted
+    // in `HARDENING.md` and `eval-harness.md` owned by nothing — a scoring change could take 0.2048
+    // to 0.25 and this stayed green while the docs kept saying 0.2048. Found by applying ISC-23's
+    // probe (does an `expect` COMPUTE the number, or does the string merely appear in a comment?) to
+    // the sweep that had just been "fixed" by adding the 2008 point. Endpoint-pinning was the same
+    // hole one level in.
+    //
+    // Yes, this now fails when scoring improves. That is the point: the docs quote these five
+    // numbers, so a change that moves them must move the docs. It is not the `margins.at(-1) >
+    // margins.at(0)` mistake retracted above — that asserted a false TREND and failed when the
+    // refusal got better. This asserts measurements, and a measurement changing IS news.
+    expect(margins.map((margin) => Number(margin.toFixed(4)))).toEqual([
+      0.2195, 0.2048, 0.1969, 0.214, 0.2306,
+    ]);
   });
 
   it("erodes, but does not break, under vocabulary alien to the query", async () => {
