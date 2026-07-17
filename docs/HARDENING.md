@@ -230,13 +230,13 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   It does not necessarily do anything of the kind — `ts_rank_cd` reaches `0.3` at three occurrences
   of a query term and keeps climbing (see H-14). The `0.1` was the fixture's, not the ranker's.
   The real reason is worse for the bar rather than better: `max(dense, ts_rank_cd)` compares two
-  incommensurable scales against a number calibrated for a third. A lexical `0.3` means "repeated a
-  term three times"; a dense `0.3` means something else; the bar means "30% IDF-weighted coverage" on
-  a path that is not this one. Such a filter would neither reliably keep evidence nor reliably drop
-  non-evidence — it would sort chunks by an arithmetic accident. Deferring is right; the first
-  justification for deferring was a universal claim generalized from a fixture, which is the H-10
-  defect again. The per-chunk half waits on H-14: normalize the rankers, or give each its own
-  criterion, then filter.
+  incommensurable scales against a number calibrated for a third. A lexical `0.3` is a cover-density
+  rank that is `0` whenever any query term is missing and unbounded once they are all present; a
+  dense `0.3` is a rescaled cosine distance; the bar means "30% IDF-weighted coverage" on a path that
+  is not this one. Such a filter would neither reliably keep evidence nor reliably drop non-evidence —
+  it would sort chunks by an arithmetic accident. Deferring is right; the first justification for
+  deferring was a universal claim generalized from a fixture, which is the H-10 defect again. The
+  per-chunk half waits on H-14: normalize the rankers, or give each its own criterion, then filter.
   H-14 stays open and is now MEASURED rather than read off the code — see below.
   Found by the third cross-vendor audit (gpt-5.5, 2026-07-16). `0.3` was applied at the QUERY level —
   "is there any evidence?" — while `finalChunks` returned `topK` regardless of each chunk's own score.
@@ -309,17 +309,25 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   real BGE-M3 endpoint, so the dense figures below come from `HashEmbeddingProvider` and the item
   stays open on that ground — the *lexical* figures do not depend on the embedder and are production-
   real.
-  - **`0.3` against `ts_rank_cd` means "repeats a query term three times".** Measured against
-    `pgvector/pgvector:pg16`: one occurrence scores `0.1`, five score `0.5`, twenty score `2`, a
-    hundred score `10`. `ts_rank_cd` is unnormalized and unbounded and rises linearly with term
-    frequency, so comparing it to a coverage RATIO is not a strict-or-lenient question, it is a
-    category error. Word count is not evidence, and that is the sharpest statement of this item.
-    (This bullet read "**`ts_rank_cd` can never clear this bar** … the lexical ranker contributes
-    nothing to the gate" until 2026-07-17, generalized from the fixture's `0`–`0.1`. A cross-vendor
-    audit refuted it with the table above. The `0.1` was never a property of `ts_rank_cd` — it is a
-    property of this fixture, where every chunk mentions a query term exactly once. A universal claim
-    from three queries is the H-10 defect above, committed inside the item that documents it, in
-    capitals.)
+  - **`ts_rank_cd` is not a coverage ratio, so `0.3` means nothing stable against it.** Measured
+    against `pgvector/pgvector:pg16`, with `to_tsvector('simple', …)` and `plainto_tsquery('simple', …)`:
+
+    | probe | score |
+    |---|---|
+    | query `auditpflicht`, chunk repeats it 1× / 5× / 20× / 100× | `0.1` / `0.5` / `2` / `10` |
+    | query `auditpflicht beleg`, chunk has `auditpflicht` 3× and no `beleg` | `0` |
+    | query `auditpflicht beleg`, chunk has `auditpflicht` 20× and no `beleg` | `0` |
+    | query `auditpflicht beleg`, chunk has both once | `0.1` |
+
+    `plainto_tsquery` ANDs the lexemes, so missing one query term scores `0` however often the rest
+    appear; clearing that hurdle scores unnormalized and unbounded, rising with frequency and cover
+    density. Comparing that to a `[0,1]` coverage ratio is a category error, not a tuning question.
+    (Two retracted claims live in this bullet, and both are the H-10 defect above — a universal claim
+    from one probe shape. It first read "**`ts_rank_cd` can never clear this bar**", generalized from
+    the fixture's `0`–`0.1`, where every chunk happens to mention a query term once. Its replacement
+    read "`0.3` means the chunk repeats a query term three times" — true of a SINGLE-term query only,
+    while the served questions are multi-term German. The first was refuted by a cross-vendor audit,
+    the second by the same audit's next round, an hour after I wrote it as the correction.)
   - **The bar sits `0.04` above the dense noise floor.** Unrelated content scored ~`0.26` and the one
     genuinely relevant chunk scored `0.691897`, against a bar of `0.3`. The separation is real but the
     bar's placement inside it is luck, not calibration: it was tuned for a different scorer entirely.
