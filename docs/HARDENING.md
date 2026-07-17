@@ -118,7 +118,11 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   paid out for matching stopwords. **Nothing tested the claim**: the tests asserted a relation at one
   corpus size (14 chunks) while the growth property lived only in a comment. The lesson is the rule
   this repo already had — a claim without a probe is "should work" — and a comment is not a probe.
-  The sweep in `retrieval.unit.test.ts` now tests it at 8/18/58/308 chunks.
+  The sweep in `retrieval.unit.test.ts` now tests it at 8/18/58/308/2008 chunks. (2008 was added
+  2026-07-17. It was quoted in the caveat below while the sweep stopped at 308, and a cross-vendor
+  audit showed what that costs: a defect gated on corpus size —
+  `inverseDocumentFrequencies(activeChunks.length > 1_000 ? [] : activeChunks)` — left the sweep
+  entirely green, and went red only once the documented point had a test.)
 
   **And the first replacement assertion was wrong too**, which is the deeper half of the lesson. The
   retraction pinned the sweep with `margins.at(-1) > margins.at(0)` — "growth ends better than it
@@ -185,16 +189,28 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   three careful commits went into hardening a hole that existed because the option existed, and the
   option's own callers had been saying so the entire time.
   **The Postgres path had a related hole, not the identical one**, and the first version of this
-  paragraph said "identical". It has no citation filter at all (`finalChunks` is
+  paragraph said "identical". It had no citation filter at all (`finalChunks` was
   `mergedCandidates.slice(0, topK)`), so a bad threshold there broke only the refusal flag; the
-  citations were never dropped, because they were never filtered. That asymmetry survives the
-  deletion: **H-15 is still closed on the in-memory path only**, and the Postgres path can still
-  refuse a query and return chunks in the same trace. The filter is deliberately not copied across —
-  nothing in CI exercises that path, and an unverified filter against the scale mismatch below would
-  be a guess wearing a fix's clothes. Tracked with H-14, which the shared constant now makes visible
-  rather than hiding behind a knob: `0.3` is calibrated for the in-memory [0,1] coverage ratio, and
-  is compared on the Postgres side against raw `ts_rank_cd` (unnormalized, not bounded by 1) and
-  against `1 - (embedding <=> …)` (a cosine distance in [0,2], so [-1,1], and it CAN go negative).
+  citations were never dropped, because they were never filtered.
+  **Closed on the Postgres path too, 2026-07-17, and the measurement is the point.** The first draft
+  of this fix declined to copy the filter across, reasoning that "nothing in CI exercises that path,
+  and an unverified filter would be a guess wearing a fix's clothes". **That reason was false, and
+  false in this repo's signature way — a property asserted instead of probed, written into the very
+  commit that retracts the habit.** `.github/workflows/ci.yml` provisions `pgvector/pgvector:pg16`
+  and runs `pnpm check:full` → `pnpm test:integration`, and
+  `acceptance.postgres-ingest.integration.test.ts` calls `retrievePostgresChunks` three times. The
+  path was never unreachable; it spins up its own container and runs in 12 seconds. Autoreview caught
+  the claim; a `grep` and one test run settled it.
+  Measured against that live pgvector, BEFORE the fix: the out-of-corpus probe returned
+  `outOfCorpus: true` **together with 8 chunks**, every one of them under the bar (dense scores
+  `-0.026972`..`0.014098`). `refusedOutcome` copies `finalChunks` into the response and into the
+  SIGNED LEDGER, and the operator UI renders them — so the served path refused a question and shipped
+  eight pieces of evidence for the refusal. On an answered query the same probe found 57 of 58 merged
+  candidates sitting at `0.259`–`0.295`, just under the bar, five of which were being returned as
+  citations. The integration test now asserts that a refusal cites nothing and that no citation is
+  below the bar; mutation-falsified by removing the filter, each assertion proven to fire on its own
+  (`a refusal must cite nothing: expected [ … ] to have a length of +0 but got 8`).
+  H-14 stays open and is now MEASURED rather than read off the code — see below.
   Found by the third cross-vendor audit (gpt-5.5, 2026-07-16). `0.3` was applied at the QUERY level —
   "is there any evidence?" — while `finalChunks` returned `topK` regardless of each chunk's own score.
   So a chunk at `0.265` was simultaneously not-evidence (if best) and evidence (as a citation).
@@ -258,8 +274,25 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   out-of-corpus question, verified against a real question rather than gibberish.
   Falsifier: ask `retrievePostgresChunks` the CRR question against the Article 50 snapshot and watch
   it answer.
-  Read from the code, not measured — no Postgres and no `BGE_M3_EMBEDDING_ENDPOINT` are reachable
-  here, so the behaviour below is UNVERIFIED and the item stays open on that ground alone:
+  **Measured 2026-07-17 against a live `pgvector/pgvector:pg16`.** This entry said "read from the
+  code, not measured — no Postgres and no `BGE_M3_EMBEDDING_ENDPOINT` are reachable here" from
+  2026-07-16 until then, and the first half of that was simply untrue: `pnpm test:integration` starts
+  its own pgvector container and runs in 12 seconds, and CI has been provisioning one all along. The
+  item did not need a new environment, it needed someone to run it. What IS still unreachable is a
+  real BGE-M3 endpoint, so the dense figures below come from `HashEmbeddingProvider` and the item
+  stays open on that ground — the *lexical* figures do not depend on the embedder and are production-
+  real.
+  - **`ts_rank_cd` can never clear this bar.** Measured across every probe, answered and refused
+    alike, it returned `0`–`0.1` against a threshold of `0.3`. So the lexical ranker contributes
+    nothing to the gate: the refusal decision on the served path is made by the dense score alone, and
+    the bm25 half only influences fusion RANK. A lexical-only match — the exact case German legal
+    vocabulary produces — cannot open the gate no matter how good it is.
+  - **The bar sits `0.04` above the dense noise floor.** Unrelated content scored ~`0.26` and the one
+    genuinely relevant chunk scored `0.691897`, against a bar of `0.3`. The separation is real but the
+    bar's placement inside it is luck, not calibration: it was tuned for a different scorer entirely.
+  - **The dense score goes negative**, as predicted from the algebra and now observed: `-0.026972` on
+    the out-of-corpus probe.
+  The rest of the item, read from the code and still unverified against a real embedder:
   - `src/modules/retrieval/postgres-retrieval.ts` never calls the `retrieveChunks` that H-10 fixed:
     it runs its own SQL rankers and only shares the fusion and the bar. `/demo` is hardened; the API
     routes in `runtime-app.ts` are not. Both are served by `src/commands/server.ts`. (This bullet
@@ -272,12 +305,18 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
     `[0,2]`, so this lands in `[-1,1]` and can be NEGATIVE, and its baseline between unrelated German
     sentences is high) and `ts_rank_cd(...)` (unbounded, typically an order of magnitude smaller).
     `bestEvidenceScore` takes the `max` of the two seeded at 0, so the larger-scaled dense score
-    decides the gate, and a negative dense score is hidden from the gate while staying eligible for
-    fusion and for `finalChunks`. Three scales, one constant.
+    decides the gate, and a negative dense score is hidden from the gate. (It is no longer eligible
+    for `finalChunks`: the evidence filter landed on this path 2026-07-17 and drops it. See H-15.)
+    Three scales, one constant.
   - `plainto_tsquery('simple', ...)` applies no stemming and no stopword removal, so the lexical
     half carries the same German-stopword exposure H-10 just fixed on the other path.
-  - The only probe is `"zzzz yyyyy xxxx"` (`acceptance.postgres-ingest.integration.test.ts:172`) —
-    noise that yields an empty tsquery. It cannot distinguish a working gate from an absent one.
+  - The only refusal probe is still `"zzzz yyyyy xxxx"`
+    (`acceptance.postgres-ingest.integration.test.ts`) — noise that yields an empty tsquery, and
+    measurement confirms it: its bm25 scores are `0`..`0` exactly. It cannot distinguish a working
+    gate from an absent one, and this item does not close until a real German question with no
+    evidence in the snapshot is refused here, the way H-10's CRR question is on the other path. What
+    the probe DID earn once assertions were put on its payload is the H-15 closure above: it proved
+    the refusal was returning 8 chunks.
   Found by the same cross-vendor audit as the H-10 retraction.
 - [x] H-13 (The required check is not load-flaky): no unit test spawns a subprocess under the unit
   project's 5s default timeout. Falsifier: run `pnpm check:fast` under CPU contention and watch a

@@ -13,6 +13,7 @@ import { HashEmbeddingProvider } from "./ingest/embedding.js";
 import { PostgresIngestionStore } from "./ingest/postgres-store.js";
 import { replayArtifactsFromEntry, replayLedgerEntry } from "./replay/replay.js";
 import { retrievePostgresChunks } from "./retrieval/postgres-retrieval.js";
+import type { RetrievalTrace } from "./retrieval/retrieval.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -185,11 +186,57 @@ async function runRetrievalAssertions(pool: Pool, dir: string): Promise<void> {
     pageStart: 1,
     charStart: 0,
   });
-  expect(currentTrace.finalChunks).toHaveLength(6);
+  // This asserted 6 — `topK` — until 2026-07-17, when the evidence filter landed on this path and it
+  // became 1. The drop is the finding, not a regression: of the 58 merged candidates for this query
+  // exactly one is evidence (`0.691897`); the other 57 sit at `0.259`–`0.295`, just UNDER the bar,
+  // and five of them were being returned as citations because `topK` was the only thing bounding the
+  // result. `topK` still bounds from above — it just is not what binds here.
+  //
+  // Worth reading off those numbers: the dense baseline between unrelated content is ~`0.26` and the
+  // bar is `0.3`, so on this path the refusal is decided by `0.04` of headroom over the noise floor.
+  // That is H-14, and it is why the bar's value on this path is luck rather than calibration.
+  expect(currentTrace.finalChunks).toHaveLength(1);
+  expect(currentTrace.finalChunks.length).toBeLessThanOrEqual(6);
   expect(
     currentTrace.finalChunks.every((chunk) => chunk.corpusSnapshotId === secondSnapshotId),
   ).toBe(true);
   expect(refused.outOfCorpus).toBe(true);
+  assertNoSubThresholdCitation(trace, currentTrace, refused);
+}
+
+// H-15 on the served path, split out because it is its own property and the assertions above are
+// about snapshot binding and topK.
+//
+// `refused.outOfCorpus` alone passed for months while `finalChunks` still held 8 chunks — and
+// `refusedOutcome` copies those into the response and into the SIGNED LEDGER, and the operator UI
+// renders them, so the system refused a question and shipped eight pieces of "evidence" for the
+// refusal. Measured against this same pgvector container before the filter landed: those 8 chunks
+// scored -0.026972..0.014098, every one far under the bar. Asserting the flag without asserting the
+// payload is exactly what let it stand.
+//
+// Mutation-falsified 2026-07-17 by removing the filter from `postgres-retrieval.ts`, with the
+// snapshot/topK assertions masked so this function had to catch it alone. It does:
+// `a refusal must cite nothing: expected [ … ] to have a length of +0 but got 8`.
+function assertNoSubThresholdCitation(
+  ...traces: readonly [RetrievalTrace, RetrievalTrace, RetrievalTrace]
+): void {
+  const [answered, current, refused] = traces;
+  expect(refused.finalChunks, "a refusal must cite nothing").toHaveLength(0);
+  // The counterweight: a filter that dropped everything would satisfy the line above on every query.
+  expect(answered.finalChunks.length, "an answered query must still cite").toBeGreaterThan(0);
+  for (const trace of [answered, current]) {
+    for (const cited of trace.finalChunks) {
+      // Re-derive the cited chunk's own evidence score the way the gate does, from the ranker passes
+      // rather than the post-fusion RRF value sitting in `retrievalScore`.
+      const own = Math.max(
+        0,
+        ...[...trace.vectorCandidates, ...trace.bm25Candidates]
+          .filter((candidate) => candidate.chunkId === cited.chunkId)
+          .map((candidate) => candidate.retrievalScore),
+      );
+      expect(own, `cited ${cited.chunkId} below the evidence bar`).toBeGreaterThanOrEqual(0.3);
+    }
+  }
 }
 
 async function postgresDatabase(): Promise<DatabaseHandle> {

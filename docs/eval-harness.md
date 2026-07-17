@@ -106,10 +106,11 @@ if any of this stops holding.
   questions stay at `0.44`–`0.56`.
 - Growing it with **vocabulary alien to the query's language**: the margin erodes. At 2000 added
   synthetic chunks sharing no German the question reaches `0.283`, still refused but close.
-- The margin is **not monotonic** and the sweep asserts no trend, only a floor: across 8/18/58/308
-  chunks it runs `0.2195` → `0.2048` → `0.1969` → `0.2140`, so the question never scores above a third
-  of the bar. An earlier version of this section asserted that growth "ends better than it starts";
-  that was a quieter restatement of the retracted claim above and is gone.
+- The margin is **not monotonic** and the sweep asserts no trend, only a floor: across
+  8/18/58/308/2008 chunks it runs `0.2195` → `0.2048` → `0.1969` → `0.2140` → `0.2306`, so the
+  question never scores above a third of the bar. An earlier version of this section asserted that
+  growth "ends better than it starts"; that was a quieter restatement of the retracted claim above and
+  is gone.
 
 The reason is structural and worth stating plainly: `base` is a ratio of IDF sums, and every IDF
 grows like `ln(corpusSize)` when its document frequency stays put. Matched and unmatched weights
