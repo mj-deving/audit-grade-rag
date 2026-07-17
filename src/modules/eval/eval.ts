@@ -62,8 +62,6 @@ export const pinnedEvalTuple: PinnedEvalTuple = {
   corpusSnapshotId: "corpus-fixtures:v1",
 };
 
-const fixtureCorpusSnapshotHash = sha256Hex(pinnedEvalTuple.corpusSnapshotId);
-
 export async function loadGoldenSet(path: string): Promise<readonly GoldenCase[]> {
   return parseGoldenSet(await readFile(path, "utf8"));
 }
@@ -216,7 +214,35 @@ export async function loadFixtureCorpus(corpusDir: string): Promise<readonly Cor
     }
     seenIn.set(chunk.chunkId, chunk.sourcePath);
   }
-  return chunks;
+  const corpusSnapshotHash = computeFixtureCorpusSnapshotHash(chunks);
+  return chunks.map((chunk) => ({ ...chunk, corpusSnapshotHash }));
+}
+
+/**
+ * The snapshot hash that the ledger, eval outcomes and demo rows attest MUST be recomputable from
+ * the corpus, not from its label. It once was `sha256(corpusSnapshotId)` — a hash of the string
+ * "corpus-fixtures:v1" — so a signed row could not be verified against the corpus it named, which
+ * is the failure this product exists to disprove. Like the ingest path's content hash (`ingest.ts`),
+ * it is derived from the chunk contents rather than a label: a canonical-JSON manifest over each
+ * chunk's id and the SHA-256 of its text, sorted so read order cannot change it, folded with the
+ * count so a re-chunk moves it. Change a corpus byte and this moves; change only the label and it
+ * does not.
+ */
+export function computeFixtureCorpusSnapshotHash(chunks: readonly CorpusChunk[]): string {
+  // Digest each chunk from its TEXT, recomputed here, not from the stored `chunkSha256` field. The
+  // ledger attests the text it serves, and a chunk whose stored sha had drifted from its text would
+  // otherwise be signed under a hash that reflects the field rather than the bytes — the same class
+  // of "the attestation does not match the artefact" this item exists to close. The tuples go
+  // through canonical JSON rather than a delimiter join so that no chunk id can smuggle the join
+  // separator and forge a different corpus into the same manifest string.
+  const manifest = chunks
+    .map((chunk) => ({ chunkId: chunk.chunkId, textSha256: sha256Hex(chunk.chunkText) }))
+    .sort((a, b) => {
+      const left = `${a.chunkId} ${a.textSha256}`;
+      const right = `${b.chunkId} ${b.textSha256}`;
+      return left < right ? -1 : left > right ? 1 : 0;
+    });
+  return sha256Hex(canonicalJson({ chunks: manifest, count: manifest.length }));
 }
 
 export type ParsedFixtureChunk = {
@@ -290,7 +316,9 @@ function fixtureChunk(
     chunkText,
     chunkSha256: sha256Hex(chunkText),
     corpusSnapshotId: pinnedEvalTuple.corpusSnapshotId,
-    corpusSnapshotHash: sha256Hex("corpus-fixtures:v1"),
+    // Stamped by loadFixtureCorpus once the whole corpus is known — the corpus hash cannot be
+    // computed from a single chunk, and hashing the label here was the H-12 defect.
+    corpusSnapshotHash: "",
     extractionWarnings: [],
     ocrUsed: false,
   };
@@ -308,7 +336,7 @@ export function runGoldenCase(
     query: goldenCase.question,
     trace,
     corpusSnapshotId: tuple.corpusSnapshotId,
-    corpusSnapshotHash: fixtureCorpusSnapshotHash,
+    corpusSnapshotHash: computeFixtureCorpusSnapshotHash(chunks),
     provider: new EvalCitedProvider(tuple.modelVersion),
     promptTemplate: {
       ...defaultPromptTemplate,
