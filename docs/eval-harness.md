@@ -49,12 +49,23 @@ lexically fair to this scorer. That is a real limit on what a passing score prov
 **Citation accuracy used to be weak because `topK` outran the corpus, and this section said so before
 anyone acted on it.** `topK` is 8, and against the old 14-chunk corpus the provider cited more than
 half of it for every question, so any expected chunk in the top 8 passed. Since 2026-07-16 a citation
-must also clear the `0.3` evidence bar (H-15), which makes the metric discriminating at any corpus
-size: survivors per golden case are now 2, 1, 1, 5 and 0 of a possible 8, rather than 8 every time.
+must also clear the `0.3` evidence bar (H-15), so survivors per golden case are now 2, 1, 1, 5 and 0
+of a possible 8, rather than 8 every time.
+
+**That narrowed retrieval. It did not narrow this metric, and the first version of this paragraph
+claimed it did** ("which makes the metric discriminating at any corpus size", written 2026-07-16,
+retracted 2026-07-17). `scoreCitationAccuracy` is `expected.every((id) => cited.has(id))` — pure
+recall. Extra citations are free, so a citation dump scores exactly what a precise citation scores,
+and the metric is blind to the difference. Measured rather than argued: delete the filter from
+`retrieveChunks`, and `pnpm eval` still reports `passed: true` at `citation-accuracy: 1`. **So the
+eval cannot verify H-15.** The property is real and is guarded — by `retrieval.unit.test.ts` › "a
+citation clears the same bar as the gate", which asserts it directly against the retriever and goes
+red when the filter is removed. It is not guarded here, and a passing eval is not evidence for it.
+
 What the old dump was hiding is worth keeping in view — the model was doing the selection the ranker
-could not, so a passing citation score partly measured the model. It is a narrower claim now, not yet
-a strong one; the corpus is still smaller than `topK`, and H-1 is what makes this metric mean
-something.
+could not, so a passing citation score partly measured the model. The corpus is still smaller than
+`topK`, H-1 is what makes this metric mean something, and a precision term is what would make it able
+to see a dump at all.
 
 ## Out-of-corpus refusal
 
@@ -87,8 +98,11 @@ information earns no bonus however short it is.
 Measured, not asserted — the sweep lives in `src/modules/retrieval/retrieval.unit.test.ts` and fails
 if any of this stops holding.
 
-- Growing the corpus with **more German legal prose** (what this project will actually do): the
-  CRR question goes `0.080` → `0.069` as the corpus grows 8 → 2008 chunks. The margin holds. Covered
+- Growing the corpus with **more German legal prose** (what this project will actually do): the CRR
+  question goes `0.080` → `0.069` as the corpus grows 8 → 2008 chunks, so the refusal ends stronger
+  than it started. It does not get there in a straight line, and the two endpoints on their own are a
+  misleading way to say it: measured over 8/18/58/308/2008 chunks the margin runs `0.2195 → 0.2048 →
+  0.1969 → 0.2140 → 0.2306`, bottoming at 58 chunks. What holds is the floor, not a trend. Covered
   questions stay at `0.44`–`0.56`.
 - Growing it with **vocabulary alien to the query's language**: the margin erodes. At 2000 added
   synthetic chunks sharing no German the question reaches `0.283`, still refused but close.

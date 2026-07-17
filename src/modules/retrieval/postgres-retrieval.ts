@@ -6,6 +6,7 @@ import {
   requireConfiguredEmbeddingProvider,
 } from "../ingest/embedding.js";
 import {
+  parseThreshold,
   parseTopK,
   type RetrievalOptions,
   type RetrievalTrace,
@@ -35,7 +36,6 @@ type RetrievedChunkRow = {
 };
 
 const candidateLimit = 50;
-const defaultThreshold = 0.3;
 
 export async function retrievePostgresChunks(
   pool: Pool,
@@ -44,6 +44,7 @@ export async function retrievePostgresChunks(
   embeddingProvider: EmbeddingProvider = requireConfiguredEmbeddingProvider(),
 ): Promise<RetrievalTrace> {
   const topK = parseTopK(options.topK);
+  const threshold = parseThreshold(options.outOfCorpusThreshold);
   const [vectorCandidates, bm25Candidates] = await Promise.all([
     denseCandidates(pool, query, options.activeSnapshotId, embeddingProvider),
     bm25CandidatesFor(pool, query, options.activeSnapshotId),
@@ -60,7 +61,7 @@ export async function retrievePostgresChunks(
     bm25Candidates,
     mergedCandidates,
     finalChunks,
-    outOfCorpus: bestEvidenceScore < (options.outOfCorpusThreshold ?? defaultThreshold),
+    outOfCorpus: bestEvidenceScore < threshold,
   };
 }
 

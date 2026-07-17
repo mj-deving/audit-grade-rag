@@ -197,6 +197,29 @@ describe("a citation clears the same bar as the gate", () => {
     expect(trace.outOfCorpus).toBe(true);
     expect(trace.finalChunks).toHaveLength(0);
   });
+
+  it("refuses a threshold that would silently disable the bar", async () => {
+    // A threshold that is not a number turns the bar off in BOTH directions at once, silently, because
+    // every comparison against NaN is false: `best < NaN` is false so nothing is ever refused, and
+    // `score >= NaN` is false so every citation is dropped. The result answers a question while citing
+    // nothing — the precise shape the describe above exists to make impossible, reachable by passing a
+    // bad config instead of by a retrieval bug.
+    const chunks = await corpus();
+    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, -0.5, 1.5]) {
+      expect(
+        () => retrieveChunks(coveredQuestion, chunks, { ...options, outOfCorpusThreshold: bad }),
+        `threshold ${String(bad)} must be rejected, not silently applied`,
+      ).toThrow(/out_of_corpus_threshold/u);
+    }
+  });
+
+  it("still honours a valid explicit threshold", async () => {
+    // The guard must reject bad config without also rejecting the tuning the option exists for.
+    const chunks = await corpus();
+    const strict = retrieveChunks(coveredQuestion, chunks, { ...options, outOfCorpusThreshold: 1 });
+    expect(strict.outOfCorpus, "nothing scores a perfect 1.0, so a bar at 1 refuses").toBe(true);
+    expect(strict.finalChunks).toHaveLength(0);
+  });
 });
 
 describe("a duty is never retrievable without its exception", () => {
@@ -247,7 +270,7 @@ describe("refusal under corpus growth", () => {
   // THE property this file exists for. The shipped claim was "the margin widens as the corpus
   // grows". It lived in a comment, was never probed, and was backwards. Growth is exactly the
   // direction this project is about to move in (H-1), so growth is what gets asserted.
-  it("holds the refusal at every corpus size, without losing margin", async () => {
+  it("holds the refusal clear of the bar at every corpus size", async () => {
     const base = await corpus();
     const margins = [0, 10, 50, 300].map((added) => {
       const chunks = grownBy(base, added);

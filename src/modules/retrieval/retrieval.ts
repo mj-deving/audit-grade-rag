@@ -36,7 +36,7 @@ export function retrieveChunks(
   );
   const bm25Candidates = rankCandidates(query, activeChunks, "bm25", idf).slice(0, candidateLimit);
   const mergedCandidates = reciprocalRankFusion(vectorCandidates, bm25Candidates);
-  const threshold = options.outOfCorpusThreshold ?? defaultThreshold;
+  const threshold = parseThreshold(options.outOfCorpusThreshold);
   const evidenceScores = bestEvidenceScores(vectorCandidates, bm25Candidates);
   const bestEvidenceScore = Math.max(0, ...evidenceScores.values());
   // A cited chunk clears the same bar that decides whether evidence exists at all. `0.3` used to be a
@@ -72,6 +72,22 @@ function bestEvidenceScores(
     scores.set(chunk.chunkId, Math.max(scores.get(chunk.chunkId) ?? 0, chunk.retrievalScore));
   }
   return scores;
+}
+
+// The threshold decides both whether evidence exists and which chunks may be cited, so a value that
+// is not a number silently turns both off rather than failing: `NaN < NaN` is false, so the gate
+// never refuses, and `score >= NaN` is false, so every citation is dropped. The result is an answer
+// asserted from zero cited chunks — the exact shape H-15 exists to make impossible. Scores are
+// coverage ratios in [0,1] by construction, so a threshold outside that range makes the gate a
+// constant and is a configuration error, not a tuning choice.
+export function parseThreshold(threshold: number | undefined): number {
+  if (threshold === undefined) {
+    return defaultThreshold;
+  }
+  if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
+    throw new Error("out_of_corpus_threshold must be a finite number from 0 through 1");
+  }
+  return threshold;
 }
 
 export function parseTopK(topK: number | undefined): number {
