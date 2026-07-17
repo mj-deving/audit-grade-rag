@@ -4,7 +4,6 @@ import { foldGerman } from "../../lib/german.js";
 export type RetrievalOptions = {
   readonly topK?: number;
   readonly activeSnapshotId: string;
-  readonly outOfCorpusThreshold?: number;
 };
 
 export type RetrievalTrace = {
@@ -17,8 +16,28 @@ export type RetrievalTrace = {
 
 const candidateLimit = 50;
 const defaultTopK = 8;
-const defaultThreshold = 0.3;
 const rrfK = 60;
+
+// The bar that decides both whether evidence exists and which chunks may be cited. One calibrated
+// constant, deliberately not configurable.
+//
+// It used to be an option, `outOfCorpusThreshold`, and nothing ever passed it: not the runtime app,
+// not the demo, not the eval harness, not a config file, not an env var. It existed only for the
+// tests that guarded it. Three commits went into narrowing that guard, each one closing a value that
+// silently disabled the bar and each one leaving another: `NaN` (every comparison false, so nothing
+// refuses and every citation drops), `0` (scores are non-negative, so `best < 0` never refuses and
+// `score >= 0` filters nothing), `1e-300` (the same no-op, wearing a positive sign), any value above
+// the score ceiling (refuses EVERY question, and each refusal is byte-identical to a legitimate one
+// because "no evidence in the corpus" is this product's normal, correct output).
+//
+// The interval was the wrong fix. Every one of those failures was reachable only through an option
+// with no caller, so the option is gone and the failure class with it. A future caller that genuinely
+// needs to tune this adds a validated surface at that point, against the range it actually measures.
+//
+// The value: `scoreChunk` returns an IDF-weighted coverage ratio in [0,1], and 0.3 is calibrated on
+// the golden set — four answerable cases clear it with a worst-case margin of 0.031 (H-11 tracks that
+// narrowness), and the out-of-corpus case sits under it at every corpus size in the sweep.
+export const evidenceThreshold = 0.3;
 
 export function retrieveChunks(
   query: string,
@@ -36,19 +55,48 @@ export function retrieveChunks(
   );
   const bm25Candidates = rankCandidates(query, activeChunks, "bm25", idf).slice(0, candidateLimit);
   const mergedCandidates = reciprocalRankFusion(vectorCandidates, bm25Candidates);
-  const finalChunks = mergedCandidates.slice(0, topK);
-  const bestEvidenceScore = Math.max(
-    0,
-    ...vectorCandidates.map((chunk) => chunk.retrievalScore),
-    ...bm25Candidates.map((chunk) => chunk.retrievalScore),
-  );
+  const evidenceScores = bestEvidenceScores(vectorCandidates, bm25Candidates);
+  const bestEvidenceScore = Math.max(0, ...evidenceScores.values());
+  // A cited chunk clears the same bar that decides whether evidence exists at all. `0.3` used to be a
+  // QUERY-level gate only — it asked "is there any evidence?" of the best candidate, while topK came
+  // back regardless of each chunk's own score. So a chunk at 0.265 was simultaneously not-evidence
+  // (it would have triggered a refusal had it ranked first) and evidence (it was rendered into the
+  // prompt, validated against, and signed into the ledger as a citation).
+  //
+  // Filtered on the PRE-FUSION evidence score, never the RRF score sitting in `retrievalScore` here:
+  // fusion rescales to ~0.016-0.032, so comparing that against 0.3 would drop every chunk on every
+  // query and refuse the whole corpus.
+  const finalChunks = mergedCandidates
+    .filter((chunk) => (evidenceScores.get(chunk.chunkId) ?? 0) >= evidenceThreshold)
+    .slice(0, topK);
   return {
     vectorCandidates,
     bm25Candidates,
     mergedCandidates,
     finalChunks,
-    outOfCorpus: bestEvidenceScore < (options.outOfCorpusThreshold ?? defaultThreshold),
+    outOfCorpus: bestEvidenceScore < evidenceThreshold,
   };
+}
+
+// The evidence score of a chunk is the best score either ranker gave it, which is exactly what the
+// out-of-corpus gate reads via its max. Keeping one function for both means the gate and the citation
+// filter can never drift apart into two notions of "evidence".
+//
+// Deliberately NOT exported. It was, briefly, so `postgres-retrieval.ts` could filter citations on
+// the same definition — which sounds like consistency and is the opposite: that path's two rankers
+// score on ranges this bar was never calibrated for, so `max(dense, ts_rank_cd)` compared against
+// `0.3` there sorts chunks by an arithmetic accident (`ts_rank_cd` is an unbounded cover-density
+// rank; `0.3` here means 30% IDF-weighted coverage). Sharing the FUNCTION would have hidden that the
+// two paths do not share the SCALE. See H-14.
+function bestEvidenceScores(
+  vectorCandidates: readonly RetrievedChunk[],
+  bm25Candidates: readonly RetrievedChunk[],
+): ReadonlyMap<string, number> {
+  const scores = new Map<string, number>();
+  for (const chunk of [...vectorCandidates, ...bm25Candidates]) {
+    scores.set(chunk.chunkId, Math.max(scores.get(chunk.chunkId) ?? 0, chunk.retrievalScore));
+  }
+  return scores;
 }
 
 export function parseTopK(topK: number | undefined): number {
