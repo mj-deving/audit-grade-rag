@@ -139,6 +139,51 @@ describe("a chunk the ranker could not rank is not evidence", () => {
     expect(trace.finalChunks.map((chunk) => chunk.chunkId)).toEqual(["good"]);
   });
 
+  it("gives a NaN-dense chunk no rank weight from the ranker that failed on it", async () => {
+    // The shape the SQL actually produces, and the one the test above misses. `bm25CandidatesFor`
+    // selects 50 rows ordered by rank, so a non-matching chunk comes back with a FINITE 0 — present
+    // in the lexical list, not absent from it. So `nan` here IS a legitimate lexical candidate that
+    // the lexical ranker scored, honestly, as nothing.
+    //
+    // What must not happen is the dense pass paying it anyway. A NaN sorts unpredictably
+    // (`compareRetrievedChunks` subtracts, and every comparison against NaN is false), so before the
+    // fix `nan` took an arbitrary dense POSITION and RRF paid rank weight for it — fusion reads rank,
+    // not score, so the NaN never had to clear anything to be rewarded. Filtering each ranker's list
+    // for finiteness before fusion is what stops that; filtering after does not, and the first
+    // version of this fix filtered after.
+    //
+    // NOTE it is still cited. That is not this defect: with a valid lexical score of 0 it is exactly
+    // as citable as any 0.26-scoring chunk, i.e. the per-chunk evidence filter deferred to H-14. The
+    // first version of this test asserted `["good"]` and was wrong — it demanded a property that
+    // needs the deferred filter, and passed only because `nan` was missing from its bm25 rows. A
+    // test can be red for the wrong reason too.
+    const trace = await retrievePostgresChunks(
+      poolReturning(
+        [
+          ["good", 0.9],
+          ["nan", Number.NaN],
+        ],
+        [
+          ["good", 0.05],
+          ["nan", 0],
+        ],
+      ),
+      "eine belegte Frage",
+      options,
+      embedder,
+    );
+    expect(trace.outOfCorpus).toBe(false);
+    const fused = new Map(trace.mergedCandidates.map((chunk) => [chunk.chunkId, chunk]));
+    // `good` is ranked first by both rankers: 1/(60+0+1) twice.
+    expect(fused.get("good")?.retrievalScore).toBeCloseTo(2 / 61, 6);
+    // `nan` is ranked second by the lexical pass and by NOTHING else: 1/(60+1+1), once. Doubling
+    // this is the signature of the dense pass having paid for a score it could not compute.
+    expect(fused.get("nan")?.retrievalScore, "a NaN score must buy no rank weight").toBeCloseTo(
+      1 / 62,
+      6,
+    );
+  });
+
   it("still answers on ordinary finite evidence", async () => {
     // A gate that refused everything would satisfy every test above.
     const trace = await retrievePostgresChunks(

@@ -206,9 +206,9 @@ function assertSnapshotBoundRetrieval(
   // and took this to 1, which looked like the H-15 fix working: of the 58 merged candidates exactly
   // one clears `0.3` (`0.691897`), the other 57 sit at `0.259`–`0.295`. But on this path that filter
   // reads `max(dense, ts_rank_cd)` against a bar calibrated for neither, so it sorts chunks by an
-  // arithmetic accident rather than selecting evidence. It was reverted. See H-14: a lexical `0.3`
-  // means "repeats a term three times", and the dense baseline between unrelated content (~`0.26`)
-  // sits `0.04` under the bar, so its placement here is luck, not calibration.
+  // arithmetic accident rather than selecting evidence. It was reverted. See H-14: `ts_rank_cd` is a
+  // cover-density rank, not a coverage ratio, and the dense baseline between unrelated content
+  // (~`0.26`) sits `0.04` under the bar, so its placement here is luck, not calibration.
   expect(currentTrace.finalChunks).toHaveLength(6);
   expect(
     currentTrace.finalChunks.every((chunk) => chunk.corpusSnapshotId === secondSnapshotId),
@@ -304,10 +304,10 @@ function round6(value: number): number {
 //
 // The OTHER half of H-15 — no sub-threshold chunk cited on an ANSWERED query — is not asserted here,
 // and its absence is deliberate rather than an oversight. It holds on the in-memory path, where the
-// bar and the scores share a scale. Here they do not (H-14: a lexical `0.3` means "repeats a term
-// three times", a dense `0.3` means something else, and the bar was calibrated for a third thing
-// entirely), so asserting it would pin a filter that sorts by an arithmetic accident. That assertion
-// belongs here the day H-14 closes.
+// bar and the scores share a scale. Here they do not (H-14: `ts_rank_cd` is an unbounded cover-
+// density rank, the dense score is a rescaled cosine distance, and the bar was calibrated for a
+// third thing entirely), so asserting it would pin a filter that sorts by an arithmetic accident.
+// That assertion belongs here the day H-14 closes.
 //
 // Mutation-falsified 2026-07-17 by removing the refusal-emptying from `postgres-retrieval.ts`, with
 // the snapshot/topK assertions masked so this function had to catch it alone. It does:

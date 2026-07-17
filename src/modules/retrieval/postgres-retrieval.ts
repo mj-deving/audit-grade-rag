@@ -48,7 +48,16 @@ export async function retrievePostgresChunks(
     denseCandidates(pool, query, options.activeSnapshotId, embeddingProvider),
     bm25CandidatesFor(pool, query, options.activeSnapshotId),
   ]);
-  const mergedCandidates = reciprocalRankFusion(vectorCandidates, bm25Candidates);
+  // Non-finite candidates are dropped from each ranker's list BEFORE fusion, not after. Filtering
+  // afterwards was not enough and the first version of this fix did exactly that: it kept a chunk if
+  // EITHER ranker scored it finitely, and `bm25CandidatesFor` returns a finite `0` for a non-match,
+  // so a chunk with a NaN dense score and a 0 lexical score stayed eligible AND kept the arbitrary
+  // dense rank its NaN had bought it in the sort. If any other candidate opened the gate, it reached
+  // the prompt and the signed ledger. A chunk is a candidate only through a ranker that actually
+  // ranked it.
+  const rankedVector = vectorCandidates.filter((chunk) => Number.isFinite(chunk.retrievalScore));
+  const rankedBm25 = bm25Candidates.filter((chunk) => Number.isFinite(chunk.retrievalScore));
+  const mergedCandidates = reciprocalRankFusion(rankedVector, rankedBm25);
   // `Math.max(0, …)` seeds the max at zero, which matters here and not in memory: `denseCandidates`
   // selects `1 - (embedding <=> $2::vector)`, and pgvector's `<=>` is a cosine DISTANCE in [0,2], so
   // this expression lands in [-1,1] and CAN be negative. Measured, not inferred: the out-of-corpus
@@ -67,24 +76,32 @@ export async function retrievePostgresChunks(
   // Found by a cross-vendor audit of the commit that claimed `outOfCorpus ? [] : …` closes the
   // refusal half "on any score scale". It does not. It closes it on any FINITE score scale, and NaN
   // is not a scale — it is the absence of one.
-  const finiteScores = [...vectorCandidates, ...bm25Candidates]
-    .map((chunk) => chunk.retrievalScore)
-    .filter((score) => Number.isFinite(score));
-  const bestEvidenceScore = Math.max(0, ...finiteScores);
+  const bestEvidenceScore = Math.max(
+    0,
+    ...[...rankedVector, ...rankedBm25].map((chunk) => chunk.retrievalScore),
+  );
   // H-14, open. `evidenceThreshold` is calibrated on the in-memory scorer's IDF-weighted coverage
   // ratio in [0,1]. Neither ranker here produces that.
   //
-  // What `0.3` actually means against `ts_rank_cd`: "the chunk repeats a query term at least three
-  // times". Measured against pgvector/pgvector:pg16 — one occurrence scores 0.1, five score 0.5,
-  // twenty score 2, a hundred score 10. It is unnormalized and unbounded and rises linearly with
-  // term frequency, so comparing it to a coverage RATIO is not a strict comparison, it is a category
-  // error. Word count is not evidence.
+  // What `0.3` means against `ts_rank_cd` depends on the query, and that is the point. Measured
+  // against pgvector/pgvector:pg16, `to_tsvector('simple', …)` vs `plainto_tsquery('simple', …)`:
   //
-  // (This comment claimed "ts_rank_cd returned 0..0.1 across every probe, so THE LEXICAL RANKER CAN
-  // NEVER CLEAR THIS BAR". A cross-vendor audit refuted it with the table above. The 0.1 was never a
-  // property of ts_rank_cd — it is the fixture's, where each chunk happens to mention the term once.
-  // A universal claim generalized from three fixture queries, which is precisely the defect H-10 in
-  // docs/HARDENING.md exists to retract, written in capitals.)
+  //   query 'auditpflicht', chunk repeats it  1x -> 0.1   5x -> 0.5   20x -> 2   100x -> 10
+  //   query 'auditpflicht beleg', chunk has 'auditpflicht' 3x and no 'beleg'  -> 0
+  //   query 'auditpflicht beleg', chunk has 'auditpflicht' 20x and no 'beleg' -> 0
+  //   query 'auditpflicht beleg', chunk has both once                         -> 0.1
+  //
+  // So `plainto_tsquery` ANDs the lexemes: miss one query term and the score is 0 no matter how
+  // often the rest appear. Clear that hurdle and the score is unnormalized and unbounded, rising
+  // with frequency and cover density. Either way it is not a coverage RATIO, so comparing it to a
+  // bar calibrated as one is a category error rather than a strict-or-lenient choice.
+  //
+  // Two retractions live in that table, both of them universal claims from a single probe shape:
+  // this comment first said "ts_rank_cd returned 0..0.1 across every probe, so THE LEXICAL RANKER
+  // CAN NEVER CLEAR THIS BAR" — refuted, the 0.1 was the fixture's, where each chunk mentions the
+  // term once. Its replacement said "0.3 means the chunk repeats a query term three times" — also
+  // refuted, that holds for a SINGLE-term query only, and the served questions are multi-term
+  // German. Both are the H-10 defect in docs/HARDENING.md, which is generalizing from a fixture.
   //
   // The dense side is no better and differently so: `HashEmbeddingProvider` puts it at 0.259..0.692
   // in the fixture, and a real BGE-M3 embedder puts it somewhere else again. One bar, two scales,
@@ -119,17 +136,11 @@ export async function retrievePostgresChunks(
   //
   // The per-chunk half therefore waits on H-14: normalize these rankers, or give each its own
   // criterion, and then filter. Not before.
-  // A chunk whose own score is non-finite is dropped too. That is NOT the per-chunk evidence filter
-  // deferred to H-14 — this needs no calibrated scale, because NaN is not a low score, it is the
-  // absence of a score. Citing a chunk the ranker could not rank is indefensible on every scale.
-  const scorable = new Set(
-    [...vectorCandidates, ...bm25Candidates]
-      .filter((chunk) => Number.isFinite(chunk.retrievalScore))
-      .map((chunk) => chunk.chunkId),
-  );
-  const finalChunks = outOfCorpus
-    ? []
-    : mergedCandidates.filter((chunk) => scorable.has(chunk.chunkId)).slice(0, topK);
+  // `mergedCandidates` is already fused from the ranked lists only, so a chunk no ranker could rank
+  // is gone before this point. That is NOT the per-chunk evidence filter deferred to H-14 — it needs
+  // no calibrated scale, because NaN is not a low score, it is the absence of a score, and citing a
+  // chunk the ranker could not rank is indefensible on every scale.
+  const finalChunks = outOfCorpus ? [] : mergedCandidates.slice(0, topK);
   return {
     vectorCandidates,
     bm25Candidates,
