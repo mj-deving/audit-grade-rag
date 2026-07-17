@@ -391,10 +391,31 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   bundling it would have hidden it. It stopped being deferrable when it blocked the H-15 commit twice
   through the pre-commit hook — the honest options there were to fix the gate or to bypass it with
   `--no-verify`, and weakening a gate to get past it is how gates die.
-- [ ] H-12 (The ledger attests the corpus, not its name): `corpusSnapshotHash` — carried by fixture
+- [x] H-12 (The ledger attests the corpus, not its name): `corpusSnapshotHash` — carried by fixture
   chunks, eval outcomes and every demo ledger row — is recomputable from the corpus it claims to
   pin. Falsifier: change a byte of the corpus and the hash the ledger records does not move.
-  Open. Found by the cross-vendor audit (gpt-5.5 via `codex exec`, 2026-07-16); missed by both the
+  Closed 2026-07-17. `computeFixtureCorpusSnapshotHash` derives the hash from a canonical-JSON
+  manifest over each served chunk's id paired with the SHA-256 of its text, sorted so read order
+  cannot change it, folded with the chunk count. `loadFixtureCorpus` computes it once over the whole
+  corpus and stamps every chunk; `runGoldenCase` and the demo ledger rows use it. The ingest/Postgres
+  path was already content-derived (`ingest.ts` hashes the joined content SHAs) and is untouched.
+  Probe: `src/modules/eval/corpus-snapshot-hash.unit.test.ts` (7 tests, red before the fix,
+  mutation-falsified against a label-hash regression: 4 of 6 originals go red).
+  Deviation from the stated fix path below, and it is deliberate: the manifest is over the SERVED
+  chunks' text, not the source snapshots' SHAs. The falsifier is "change a byte of the CORPUS", the
+  ledger attests what it serves and cites (the chunks), and H-9 already binds chunks to source
+  separately — so hashing the chunks closes this item without reaching into H-9's territory.
+  Cross-vendor audit (gpt-5.6-sol via `codex exec`, 2026-07-17): FAIL with three findings, all three
+  remediated first-hand before landing. (1) The manifest first digested the STORED `chunkSha256`
+  field, so editing a chunk's text while leaving the field stale left the hash unmoved and a signed
+  row attesting text it did not match — the first `moves when a byte changes` test had moved both the
+  text and the field, so it never probed the drift. Now the digest is `sha256(chunkText)` recomputed
+  at hash time, with a regression test that mutates the text alone. (2) The first encoding joined
+  `id:sha` with `|`, which could collide for ids containing the delimiter; the loader's
+  `[A-Za-z0-9_-]+` grammar prevents it on the fixture path but the exported function did not enforce
+  it, so the manifest now goes through canonical JSON. (3) This doc and `docs/eval-harness.md` were
+  stale — synced here.
+  Discovery history. Found by the cross-vendor audit (gpt-5.5 via `codex exec`, 2026-07-16); missed by both the
   Claude executor and its own H-9 work. `src/modules/eval/eval.ts:65` sets
   `fixtureCorpusSnapshotHash = sha256Hex(pinnedEvalTuple.corpusSnapshotId)`, so the hash is
   `sha256("corpus-fixtures:v1") = 06f96f902c45…` — a hash of the label's own spelling. The demo
