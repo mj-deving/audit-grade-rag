@@ -124,14 +124,15 @@ export async function retrievePostgresChunks(
   // audit caught that in turn. Both are worth keeping straight:
   //
   // The stated reason was "ts_rank_cd never exceeds 0.1, so the filter necessarily deletes the
-  // lexical ranker". False. ts_rank_cd reaches 0.3 at three occurrences of a query term and keeps
-  // climbing (see the table below). The filter does not NECESSARILY delete lexical evidence.
+  // lexical ranker". False: against a single-term query it reaches 0.3 at three occurrences and keeps
+  // climbing (table above). The filter does not NECESSARILY delete lexical evidence.
   //
   // The real reason is worse for the bar, not better: `max(dense, ts_rank_cd)` compares two
-  // incommensurable scales against a number calibrated for a third. A lexical score of 0.3 means
-  // "repeated a term three times"; a dense score of 0.3 means something else entirely; the bar means
-  // "30% IDF-weighted coverage" on a path that is not this one. So the filter would neither reliably
-  // keep evidence nor reliably drop non-evidence — it would sort chunks by an arithmetic accident.
+  // incommensurable scales against a number calibrated for a third. A lexical 0.3 is a cover-density
+  // rank — 0 whenever any query term is missing, unbounded once they are all present; a dense 0.3 is
+  // a rescaled cosine distance; the bar means "30% IDF-weighted coverage" on a path that is not this
+  // one. So the filter would neither reliably keep evidence nor reliably drop non-evidence — it
+  // would sort chunks by an arithmetic accident.
   // Deferring is right; the earlier justification for deferring was a universal claim from a fixture.
   //
   // The per-chunk half therefore waits on H-14: normalize these rankers, or give each its own
