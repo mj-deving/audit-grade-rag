@@ -147,12 +147,15 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   the growth this project is about to do. Fourth instance of the same defect in three days, in the
   paragraph that congratulates itself on re-measuring: the figures were right and the verb was not.)
   Growth with alien
-  vocabulary erodes it (`0.283` at 2000 added synthetic chunks — refused, but closer), because `base`
-  is a ratio of IDF sums and drifts toward the query's plain matched-token fraction, which for this
-  question is `3/10` — the threshold exactly. See `docs/eval-harness.md`. Mixed-language corpora are
-  the case to watch; H-11. (Every figure in this paragraph was re-measured after the H-15 re-cut; the
-  previous ones were taken against the 14-chunk corpus and were stale the moment it moved. Numbers in
-  prose are owned by nothing.)
+  vocabulary erodes it (`0.2825` at 2000 added chunks — refused, but rising toward the bar as the
+  corpus grows, while German filler at the same size falls to `0.0694`), because `base` is a ratio of
+  IDF sums and drifts toward the query's plain matched-token fraction, which for this question is
+  `3/10` — the threshold exactly. See `docs/eval-harness.md`. Mixed-language corpora are the case to
+  watch; H-11. (Every figure in this paragraph was re-measured after the H-15 re-cut; the previous
+  ones were taken against the 14-chunk corpus and were stale the moment it moved. Numbers in prose are
+  owned by nothing — and this paragraph proved its own sentence: it carried `0.283` for a day with no
+  test behind it AND no committed filler to reproduce it. Re-measured 2026-07-17 at `0.282525`
+  against a filler that now lives in the test. The number was right; nothing was holding it.)
 - [x] H-15 (One threshold, one meaning): a chunk cited as evidence clears the same bar that decides
   whether evidence exists at all.
   Falsifier: an answered question cites a chunk whose own score would have been refused as

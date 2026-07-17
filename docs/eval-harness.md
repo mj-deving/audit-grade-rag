@@ -104,8 +104,14 @@ if any of this stops holding.
   misleading way to say it: measured over 8/18/58/308/2008 chunks the margin runs `0.2195 → 0.2048 →
   0.1969 → 0.2140 → 0.2306`, bottoming at 58 chunks. What holds is the floor, not a trend. Covered
   questions stay at `0.44`–`0.56`.
-- Growing it with **vocabulary alien to the query's language**: the margin erodes. At 2000 added
-  synthetic chunks sharing no German the question reaches `0.283`, still refused but close.
+- Growing it with **vocabulary alien to the query's language**: the margin erodes, and this is the one
+  documented limit of the guarantee. The two fillers go opposite ways as the corpus grows: alien rises
+  `0.2154` → `0.2654` → `0.2825` toward the bar at 50/500/2000 added chunks, while German legal prose
+  falls `0.1031` → `0.0813` → `0.0694` away from it. Still refused at 2000, but the direction is the
+  point, so mixed-language corpora are the case to watch (H-11). (This bullet claimed `0.283` from
+  2026-07-16 with no test behind it, and the filler that produced it was never committed — the figure
+  named a corpus that existed nowhere. Re-measured 2026-07-17 against a committed filler: `0.282525`,
+  so the old number was right and merely unguarded. It now has a test.)
 - The margin is **not monotonic** and the sweep asserts no trend, only a floor: across
   8/18/58/308/2008 chunks it runs `0.2195` → `0.2048` → `0.1969` → `0.2140` → `0.2306`, so the
   question never scores above a third of the bar. An earlier version of this section asserted that
