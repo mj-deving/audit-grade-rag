@@ -197,15 +197,26 @@ describe("a citation clears the same bar as the gate", () => {
     expect(trace.outOfCorpus).toBe(true);
     expect(trace.finalChunks).toHaveLength(0);
   });
+});
 
-  it("refuses a threshold that would silently disable the bar", async () => {
-    // A threshold that is not a number turns the bar off in BOTH directions at once, silently, because
-    // every comparison against NaN is false: `best < NaN` is false so nothing is ever refused, and
-    // `score >= NaN` is false so every citation is dropped. The result answers a question while citing
-    // nothing — the precise shape the describe above exists to make impossible, reachable by passing a
-    // bad config instead of by a retrieval bug.
+// Separate from the describe above because the failure has a different origin: there the bar is
+// wrong because retrieval is wrong, here it is wrong because the CONFIG is, and the retriever is
+// working perfectly while doing it.
+describe("the evidence bar cannot be silently disabled by config", () => {
+  it("refuses every threshold that would silently disable the bar", async () => {
+    // The values worth rejecting are the ones that disable the bar WITHOUT failing. NaN does it
+    // because every comparison against it is false: nothing is refused AND every citation is dropped.
+    // Zero does it from the other side: scores are non-negative and `bestEvidenceScore` is
+    // `Math.max(0, …)`, so `best < 0` is never true and `score >= 0` always is.
     const chunks = await corpus();
-    for (const bad of [Number.NaN, Number.POSITIVE_INFINITY, -0.5, 1.5]) {
+    for (const bad of [
+      Number.NaN,
+      Number.POSITIVE_INFINITY,
+      Number.NEGATIVE_INFINITY,
+      0,
+      -0,
+      -0.5,
+    ]) {
       expect(
         () => retrieveChunks(coveredQuestion, chunks, { ...options, outOfCorpusThreshold: bad }),
         `threshold ${String(bad)} must be rejected, not silently applied`,
@@ -213,12 +224,44 @@ describe("a citation clears the same bar as the gate", () => {
     }
   });
 
-  it("still honours a valid explicit threshold", async () => {
-    // The guard must reject bad config without also rejecting the tuning the option exists for.
+  it("would answer the out-of-corpus question at a threshold of zero", async () => {
+    // WHY zero is rejected rather than merely discouraged, stated as the damage instead of the rule.
+    // This is the H-10 defect exactly — a banking question answered from the AI Act — reachable by
+    // config alone. The probe reaches past the guard to prove the hole it closes is real; if
+    // `bestEvidenceScore` ever stops being seeded at 0, this test fails and the guard's `<= 0` bound
+    // needs rereading.
     const chunks = await corpus();
-    const strict = retrieveChunks(coveredQuestion, chunks, { ...options, outOfCorpusThreshold: 1 });
-    expect(strict.outOfCorpus, "nothing scores a perfect 1.0, so a bar at 1 refuses").toBe(true);
+    const scores = [...retrieveChunks(outOfCorpusQuestion, chunks, options).vectorCandidates].map(
+      (chunk) => chunk.retrievalScore,
+    );
+    expect(Math.max(0, ...scores), "the question genuinely has no evidence").toBeLessThan(
+      threshold,
+    );
+    expect(
+      Math.min(...scores),
+      "…and no score is negative, which is what makes 0 a no-op",
+    ).toBeGreaterThanOrEqual(0);
+  });
+
+  it("still honours a valid explicit threshold", async () => {
+    // The guard must reject the disabling values without also rejecting the tuning the option exists
+    // for. No upper bound: a threshold above the scorer's range fails loudly (everything refused) and
+    // the Postgres caller's ranks are not bounded by 1 at all.
+    const chunks = await corpus();
+    const strict = retrieveChunks(coveredQuestion, chunks, {
+      ...options,
+      outOfCorpusThreshold: 1.5,
+    });
+    expect(strict.outOfCorpus, "a bar above the scorer's range refuses, loudly and obviously").toBe(
+      true,
+    );
     expect(strict.finalChunks).toHaveLength(0);
+    const loose = retrieveChunks(coveredQuestion, chunks, {
+      ...options,
+      outOfCorpusThreshold: 0.01,
+    });
+    expect(loose.outOfCorpus, "a low-but-positive bar is tuning, not disabling").toBe(false);
+    expect(loose.finalChunks.length).toBeGreaterThan(0);
   });
 });
 
