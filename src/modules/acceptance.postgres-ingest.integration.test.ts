@@ -200,7 +200,11 @@ async function runRetrievalAssertions(pool: Pool, dir: string): Promise<void> {
   ).toBe(true);
   expect(refused.outOfCorpus).toBe(true);
   assertRefusalCitesNothing(trace, refused);
-  assertH14ScaleMismatch(currentTrace, refused);
+  assertH14ScaleMismatch({
+    all: [trace, currentTrace, refused],
+    scaleProbe: currentTrace,
+    refused,
+  });
 }
 
 // H-14, pinned rather than described. These four numbers are the entire argument for why the shared
@@ -211,25 +215,48 @@ async function runRetrievalAssertions(pool: Pool, dir: string): Promise<void> {
 // If any of these move, H-14's write-up is out of date and this fails, which is the intended
 // coupling: the item stays open until the scales are normalized, and its evidence stays true until
 // then.
-function assertH14ScaleMismatch(answered: RetrievalTrace, refused: RetrievalTrace): void {
-  const lexical = [...answered.bm25Candidates, ...refused.bm25Candidates].map(
-    (chunk) => chunk.retrievalScore,
+function assertH14ScaleMismatch(probes: {
+  readonly all: readonly RetrievalTrace[];
+  readonly scaleProbe: RetrievalTrace;
+  readonly refused: RetrievalTrace;
+}): void {
+  // EVERY probe, because that is the word H-14 uses. The first version of this helper took two of
+  // the three traces while the docs said "across every probe, answered and refused alike" — a claim
+  // quantified over a set the assertion did not cover. Caught by autoreview: the series-vs-endpoint
+  // hole in yet another disguise. Assert over the same set you quantify over.
+  const lexical = probes.all.flatMap((trace) =>
+    trace.bm25Candidates.map((chunk) => chunk.retrievalScore),
   );
   // The finding: ts_rank_cd tops out at 0.1 against a 0.3 bar, so the lexical ranker can NEVER open
   // the gate or clear a citation filter. The served refusal is decided by the dense score alone.
   expect(Math.max(...lexical), "ts_rank_cd cannot reach the evidence bar").toBeLessThan(0.3);
-  expect(Math.max(...lexical)).toBeCloseTo(0.1, 5);
-  const dense = answered.vectorCandidates.map((chunk) => chunk.retrievalScore);
+  expect(round6(Math.max(...lexical))).toBe(0.1);
+  // `scaleProbe` is named rather than positional because the docs' dense figures come from ONE
+  // specific query ("Aktualisierte Auditpflicht"), and the first version of this took whichever
+  // trace happened to be first. Tightening `toBeCloseTo(…, 5)` to an exact 6dp compare is what
+  // exposed that: it failed with "expected 0.691868 to be 0.691897" — a different probe's number,
+  // silently accepted by the looser assertion.
+  const dense = probes.scaleProbe.vectorCandidates.map((chunk) => chunk.retrievalScore);
   // One genuinely relevant chunk, far above the bar; everything else clustered just under it. The
   // separation is real, but 0.3 sits only ~0.04 above the noise floor, and that placement is luck:
   // the bar was tuned for the in-memory scorer, which is not this.
-  expect(Math.max(...dense)).toBeCloseTo(0.691897, 5);
-  expect(Math.min(...dense)).toBeCloseTo(0.259852, 5);
+  //
+  // Exact to 6dp, matching what the docs quote. `toBeCloseTo(…, 5)` would let 0.691897 drift to
+  // 0.691901 while staying green — a stale figure with a passing test, i.e. the thing this helper
+  // exists to prevent, one order of magnitude smaller.
+  expect(round6(Math.max(...dense))).toBe(0.691897);
+  expect(round6(Math.min(...dense))).toBe(0.259852);
   // pgvector's `<=>` is a cosine DISTANCE in [0,2], so `1 - (…)` lands in [-1,1] and goes negative.
-  expect(
-    Math.min(...refused.vectorCandidates.map((chunk) => chunk.retrievalScore)),
-    "the dense score is not bounded below by 0",
-  ).toBeLessThan(0);
+  // The sign is the property; the value is what the docs quote, so both are asserted.
+  const refusedDenseFloor = Math.min(
+    ...probes.refused.vectorCandidates.map((chunk) => chunk.retrievalScore),
+  );
+  expect(refusedDenseFloor, "the dense score is not bounded below by 0").toBeLessThan(0);
+  expect(round6(refusedDenseFloor)).toBe(-0.026972);
+}
+
+function round6(value: number): number {
+  return Number(value.toFixed(6));
 }
 
 // H-15 on the served path, the half of it that is provable on any score scale: if the system says no
