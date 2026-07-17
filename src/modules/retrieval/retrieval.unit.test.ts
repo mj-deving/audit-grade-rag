@@ -48,11 +48,30 @@ const unrelatedGermanChunks = [
   "Ein Vertrag kommt zustande, wenn die Parteien sich ueber die wesentlichen Bestandteile geeinigt haben.",
 ];
 
+// The adversarial half: vocabulary that shares NOTHING with the query's language, not even
+// stopwords. This is what erodes the guarantee, because every German IDF grows like ln(corpusSize)
+// while no matched weight grows with it, so `base` drifts toward the query's plain matched-TOKEN
+// fraction — 3/10 for the CRR question, which is the 0.3 threshold exactly.
+const alienChunks = [
+  "quorvex thalmi rundak pelith moravu sindel torque brakan.",
+  "velmoth sarkun deplivo trakan ushendi molbrek tavin quorse.",
+  "prendal vokmir sethuna glavik morbeth ilundra sokvet arnith.",
+  "kelbrun mothave selindri parvok tuname grendil vashto kelmi.",
+];
+
 async function corpus() {
   return loadFixtureCorpus("corpus-fixtures");
 }
 
 function grownBy(base: readonly CorpusChunk[], count: number): readonly CorpusChunk[] {
+  return grownWith(base, count, unrelatedGermanChunks);
+}
+
+function grownWith(
+  base: readonly CorpusChunk[],
+  count: number,
+  filler: readonly string[],
+): readonly CorpusChunk[] {
   const template = base[0];
   if (template === undefined) {
     throw new Error("fixture corpus is empty");
@@ -61,8 +80,8 @@ function grownBy(base: readonly CorpusChunk[], count: number): readonly CorpusCh
     ...base,
     ...Array.from({ length: count }, (_, index) => ({
       ...template,
-      chunkId: `unrelated-${String(index)}`,
-      chunkText: unrelatedGermanChunks[index % unrelatedGermanChunks.length] ?? "",
+      chunkId: `filler-${String(index)}`,
+      chunkText: filler[index % filler.length] ?? "",
     })),
   ];
 }
@@ -309,5 +328,37 @@ describe("refusal under corpus growth", () => {
     // together, and drift is exactly how the additive bonus hid: it moved all of them at once.
     expect(margins.at(0) ?? 0).toBeCloseTo(0.2195, 3);
     expect(margins.at(-1) ?? 0).toBeCloseTo(0.2306, 3);
+  });
+
+  it("erodes, but does not break, under vocabulary alien to the query", async () => {
+    // The documented LIMIT of the guarantee, and the reason this test exists at all: both docs have
+    // claimed since 2026-07-16 that alien growth takes the CRR question to `0.283`, "still refused
+    // but close". No test owned that number, and worse, nothing could reproduce it — it came from an
+    // ad-hoc probe whose filler was never committed, so the figure named a corpus that no longer
+    // exists anywhere. That is one step past the 2008-chunk gap a cross-vendor audit found: not just
+    // an unowned measurement, an unrepeatable one.
+    //
+    // So it is re-measured here against a filler that IS committed, and the docs now quote this.
+    // The mechanism: every German IDF grows like ln(corpusSize) while no matched weight grows with
+    // it, so `base` drifts up toward the query's plain matched-token fraction (3/10 for this
+    // question, i.e. the threshold exactly). Alien vocabulary is the worst case because it adds
+    // corpus size without adding a single shared term.
+    // The re-measurement vindicates the old figure — 0.282525 rounds to the documented 0.283 — which
+    // is the useful part: the claim was true and still owned by nothing. An unowned number is not
+    // wrong, it is unguarded, and this one guarded the single documented limit of the refusal.
+    const base = await corpus();
+    const eroded = bestScore(outOfCorpusQuestion, grownWith(base, 2000, alienChunks));
+    expect(eroded, "alien growth must still leave the question refused").toBeLessThan(threshold);
+    // A CEILING, which is the direction that hurts: if a change makes alien growth erode faster,
+    // this fails. Deliberately not `toBeCloseTo` — the property is "stays clear of the bar", and
+    // pinning the exact value would fail on an improvement, the mistake the sweep above documents.
+    expect(eroded, "alien-growth erosion is bounded").toBeLessThan(0.29);
+    // The contrast is the actual claim, and it is about VOCABULARY, not size. At the same 2000 added
+    // chunks the two fillers go opposite ways: alien rises 0.2154 → 0.2654 → 0.2825 toward the bar
+    // as the corpus grows, German falls 0.1031 → 0.0813 → 0.0694 away from it.
+    expect(
+      bestScore(outOfCorpusQuestion, grownBy(base, 2000)),
+      "same corpus size, same-language filler: not the same problem",
+    ).toBeLessThan(eroded / 3);
   });
 });
