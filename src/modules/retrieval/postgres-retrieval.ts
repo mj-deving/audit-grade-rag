@@ -6,7 +6,7 @@ import {
   requireConfiguredEmbeddingProvider,
 } from "../ingest/embedding.js";
 import {
-  parseThreshold,
+  evidenceThreshold,
   parseTopK,
   type RetrievalOptions,
   type RetrievalTrace,
@@ -36,14 +36,6 @@ type RetrievedChunkRow = {
 };
 
 const candidateLimit = 50;
-// This path's scores are NOT the in-memory scorer's [0,1] coverage ratio, so it must not borrow that
-// ceiling: `bm25CandidatesFor` selects raw `ts_rank_cd(...)` with no normalization flag, which is not
-// bounded by 1, and `denseCandidates` selects `1 - (embedding <=> …)`, a pgvector cosine DISTANCE in
-// [0,2] mapped to [-1,1]. A stricter cutoff above 1 can therefore be meaningful here.
-// `Infinity` is honest about what is known rather than a considered bound: nobody has measured what
-// these two rankers actually produce, which is precisely why the shared `0.3` default is unverified
-// on this path. Do not read this as "any threshold is fine" — read it as H-14, open.
-const postgresScoreCeiling = Number.POSITIVE_INFINITY;
 
 export async function retrievePostgresChunks(
   pool: Pool,
@@ -52,13 +44,24 @@ export async function retrievePostgresChunks(
   embeddingProvider: EmbeddingProvider = requireConfiguredEmbeddingProvider(),
 ): Promise<RetrievalTrace> {
   const topK = parseTopK(options.topK);
-  const threshold = parseThreshold(options.outOfCorpusThreshold, postgresScoreCeiling);
   const [vectorCandidates, bm25Candidates] = await Promise.all([
     denseCandidates(pool, query, options.activeSnapshotId, embeddingProvider),
     bm25CandidatesFor(pool, query, options.activeSnapshotId),
   ]);
   const mergedCandidates = reciprocalRankFusion(vectorCandidates, bm25Candidates);
+  // H-15 is closed on the in-memory path only. There, a chunk below the evidence bar cannot be cited;
+  // here `finalChunks` is topK of the fusion regardless of any chunk's own score, so this path can
+  // still refuse a query and hand back chunks at the same time. The filter is not copied across on
+  // the reasoning that it would be untested: this path needs a live Postgres and pgvector, nothing in
+  // CI exercises it, and an unverified filter against the scale problem below is a guess wearing a
+  // fix's clothes. Tracked as H-15/Postgres, open.
   const finalChunks = mergedCandidates.slice(0, topK);
+  // `Math.max(0, …)` seeds the max at zero, which matters here and not in memory: `denseCandidates`
+  // selects `1 - (embedding <=> $2::vector)`, and pgvector's `<=>` is a cosine DISTANCE in [0,2], so
+  // this expression lands in [-1,1] and CAN be negative. A corpus whose every chunk opposes the query
+  // therefore reports a best evidence score of 0 rather than something negative. That is the refusing
+  // direction, so it is safe, but the negative candidates it hides stay eligible for fusion and for
+  // `finalChunks` above.
   const bestEvidenceScore = Math.max(
     0,
     ...vectorCandidates.map((chunk) => chunk.retrievalScore),
@@ -69,7 +72,14 @@ export async function retrievePostgresChunks(
     bm25Candidates,
     mergedCandidates,
     finalChunks,
-    outOfCorpus: bestEvidenceScore < threshold,
+    // H-14, and the reason it is a hardening item rather than a detail. `evidenceThreshold` is
+    // calibrated on the in-memory scorer's IDF-weighted coverage ratio in [0,1]. Neither ranker here
+    // produces that: `ts_rank_cd` is selected with no normalization flag and is not bounded by 1, and
+    // the dense expression above is a rescaled cosine distance. So 0.3 means one thing in memory and
+    // an unmeasured thing here, and nobody has run the measurement — this path has no CI coverage.
+    // The shared constant is the honest form of that: one bar, two scales, visible in the diff. An
+    // option per path would have hidden the same problem behind a knob.
+    outOfCorpus: bestEvidenceScore < evidenceThreshold,
   };
 }
 

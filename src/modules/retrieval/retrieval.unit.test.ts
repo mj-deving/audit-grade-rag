@@ -199,75 +199,19 @@ describe("a citation clears the same bar as the gate", () => {
   });
 });
 
-// Separate from the describe above because the failure has a different origin: there the bar is
-// wrong because retrieval is wrong, here it is wrong because the CONFIG is, and the retriever is
-// working perfectly while doing it.
-describe("the evidence bar cannot be silently disabled by config", () => {
-  it("refuses every threshold that would silently disable the bar", async () => {
-    // The values worth rejecting are the ones that disable the bar WITHOUT failing. NaN does it
-    // because every comparison against it is false: nothing is refused AND every citation is dropped.
-    // Zero does it from the other side: scores are non-negative and `bestEvidenceScore` is
-    // `Math.max(0, …)`, so `best < 0` is never true and `score >= 0` always is.
-    const chunks = await corpus();
-    for (const bad of [
-      Number.NaN,
-      Number.POSITIVE_INFINITY,
-      Number.NEGATIVE_INFINITY,
-      0,
-      -0,
-      -0.5,
-    ]) {
-      expect(
-        () => retrieveChunks(coveredQuestion, chunks, { ...options, outOfCorpusThreshold: bad }),
-        `threshold ${String(bad)} must be rejected, not silently applied`,
-      ).toThrow(/out_of_corpus_threshold/u);
-    }
-  });
-
-  it("would answer the out-of-corpus question at a threshold of zero", async () => {
-    // WHY zero is rejected rather than merely discouraged, stated as the damage instead of the rule.
-    // This is the H-10 defect exactly — a banking question answered from the AI Act — reachable by
-    // config alone. The probe reaches past the guard to prove the hole it closes is real; if
-    // `bestEvidenceScore` ever stops being seeded at 0, this test fails and the guard's `<= 0` bound
-    // needs rereading.
-    const chunks = await corpus();
-    const scores = [...retrieveChunks(outOfCorpusQuestion, chunks, options).vectorCandidates].map(
-      (chunk) => chunk.retrievalScore,
-    );
-    expect(Math.max(0, ...scores), "the question genuinely has no evidence").toBeLessThan(
-      threshold,
-    );
-    expect(
-      Math.min(...scores),
-      "…and no score is negative, which is what makes 0 a no-op",
-    ).toBeGreaterThanOrEqual(0);
-  });
-
-  it("refuses a threshold above this path's score ceiling", async () => {
-    // The other silent end. `scoreChunk` cannot exceed 1, so a bar at 1.5 refuses every question —
-    // and a refusal is this product's normal, correct output for an unevidenced question, so every
-    // one of those looks legitimate and nothing surfaces. An earlier version of this guard allowed it
-    // on the reasoning that it "fails loudly". It does not fail loudly; it fails invisibly, which is
-    // the same failure this describe is named for.
-    const chunks = await corpus();
-    expect(() =>
-      retrieveChunks(coveredQuestion, chunks, { ...options, outOfCorpusThreshold: 1.5 }),
-    ).toThrow(/at most 1/u);
-  });
-
-  it("still honours the tuning the option exists for", async () => {
-    // The counterweight: a guard that rejected everything would pass every test above.
-    const chunks = await corpus();
-    const loose = retrieveChunks(coveredQuestion, chunks, {
-      ...options,
-      outOfCorpusThreshold: 0.01,
-    });
-    expect(loose.outOfCorpus, "a low-but-positive bar is tuning, not disabling").toBe(false);
-    expect(loose.finalChunks.length).toBeGreaterThan(0);
-    const tight = retrieveChunks(coveredQuestion, chunks, { ...options, outOfCorpusThreshold: 1 });
-    expect(tight.outOfCorpus, "a bar exactly at the ceiling is valid, and refuses").toBe(true);
-  });
-});
+// The bar is a constant, and the tests that used to live here are gone with the option they guarded.
+//
+// `outOfCorpusThreshold` was configurable and had no caller — not the runtime app, not the demo, not
+// the eval harness, not a config file or an env var. Three commits went into guarding it, each
+// closing one value that silently disabled the bar and leaving the next: NaN, then 0, then 1e-300,
+// then any value above the score ceiling (which refuses every question, indistinguishably from a
+// legitimate refusal). A fourth guard would have closed the fourth value. Deleting the option closed
+// all of them at once, which is what the option's own absence of callers had been saying the whole
+// time.
+//
+// What survives that deletion is `evidenceThreshold`'s calibration, and that is what the rest of this
+// file measures: the covered questions clear 0.3, the out-of-corpus question stays under it at every
+// corpus size in the sweep, and no chunk below it is ever cited.
 
 describe("a duty is never retrievable without its exception", () => {
   // The corpus-level half of H-15, and the reason the filter could land at all. Article 50 states an
@@ -319,7 +263,12 @@ describe("refusal under corpus growth", () => {
   // direction this project is about to move in (H-1), so growth is what gets asserted.
   it("holds the refusal clear of the bar at every corpus size", async () => {
     const base = await corpus();
-    const margins = [0, 10, 50, 300].map((added) => {
+    // 2000 is here because `docs/HARDENING.md` quotes the 2008-chunk margin, and a documented
+    // measurement that no test reruns is a number with an expiry date nobody can see. It was
+    // unowned until a cross-vendor audit demonstrated the gap: a defect gated on corpus size
+    // (`inverseDocumentFrequencies(activeChunks.length > 1_000 ? [] : activeChunks)`) left this
+    // sweep entirely green at 8/18/58/308, and went red only once this point existed.
+    const margins = [0, 10, 50, 300, 2000].map((added) => {
       const chunks = grownBy(base, added);
       const size = String(chunks.length);
       const outScore = bestScore(outOfCorpusQuestion, chunks);
@@ -334,8 +283,7 @@ describe("refusal under corpus growth", () => {
     });
 
     // The FLOOR is the property, and no trend is asserted, because the margin has no trend: it dips
-    // and recovers. Measured over this sweep it runs 0.2195 → 0.2048 → 0.1969 → 0.2140, and out to
-    // 2008 chunks it reaches 0.2306.
+    // and recovers. Measured over this sweep it runs 0.2195 → 0.2048 → 0.1969 → 0.2140 → 0.2306.
     //
     // This block previously asserted non-erosion with 0.01 of slack plus `margins.at(-1) >
     // margins.at(0)` — "growth must end better than it started". Both were wrong in the same way, and
@@ -360,6 +308,6 @@ describe("refusal under corpus growth", () => {
     // The endpoints, pinned and measured. A floor alone would still pass if every score drifted
     // together, and drift is exactly how the additive bonus hid: it moved all of them at once.
     expect(margins.at(0) ?? 0).toBeCloseTo(0.2195, 3);
-    expect(margins.at(-1) ?? 0).toBeCloseTo(0.214, 3);
+    expect(margins.at(-1) ?? 0).toBeCloseTo(0.2306, 3);
   });
 });
