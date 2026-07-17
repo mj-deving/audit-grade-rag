@@ -72,8 +72,22 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   non-browser clients and two reputable mirrors were found to differ in wording, so provenance names
   what was retrieved and when rather than claiming OJ status.
 - [x] H-10 (Refusal is evidence-driven, not stopword-driven **on the in-memory fixture path**): a
-  question with no content-word overlap with the corpus is refused, and the margin does not shrink
-  as the corpus grows. Scope is the path `/demo` and `pnpm eval` run — `retrieveChunks` over
+  question with no content-word overlap with the corpus is refused, and the refusal stays clear of
+  the bar at every corpus size — measured, the margin never falls below `0.19`, i.e. such a question
+  never scores above roughly a third of the `0.3` threshold.
+  This criterion said "and the margin does not shrink as the corpus grows" until 2026-07-17. That was
+  the third life of the same false claim: it shipped as "the margin widens as the corpus grows", was
+  retracted on 2026-07-16 when an audit disproved it, and survived here in the criterion of the very
+  item that retracted it. It is false: over the sweep the margin runs `0.2195 → 0.2048 → 0.1969 →
+  0.2140`, so it shrinks over the first three points and ends below where it started. The margin has
+  no trend — it dips and recovers — and a floor is the property the sweep asserts.
+  (The first draft of this correction said the margin shrinks "while the refusal itself gets stronger
+  at every size", which contradicts the very figures beside it: a shrinking margin *is* a weakening
+  refusal. That clause is true of the H-15 re-cut — comparing the 8-chunk corpus against the 14-chunk
+  one at each sweep point — and false of corpus growth, which is the subject here. Lifting a true
+  sentence out of the context that made it true is the same defect as the one this paragraph
+  retracts, committed while retracting it.)
+  Scope is the path `/demo` and `pnpm eval` run — `retrieveChunks` over
   `loadFixtureCorpus`. The Postgres path has its own scorer and its own threshold and is NOT covered
   by this item; see H-14.
   Falsifier: neutralise the term weighting, or make the bm25 length bonus additive again, and the
@@ -114,8 +128,15 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   sweep now asserts a floor — the CRR question never scores above a third of the bar at any corpus
   size — and asserts no trend, because the margin has none: it dips and recovers.
 
-  Caveat, measured and not claimed away: the guarantee is bounded. Growth in the same language widens
-  the margin (the CRR question scores `0.080` → `0.069` over 8 → 2008 chunks). Growth with alien
+  Caveat, measured and not claimed away: the guarantee is bounded. Growth in the same language ends
+  wider than it started but is not monotonic, and the shape matters more than the endpoints: measured
+  over 8/18/58/308/2008 chunks the margin runs `0.2195 → 0.2048 → 0.1969 → 0.2140 → 0.2306`. It gets
+  worse before it gets better, and its minimum sits at 58 chunks — inside the range H-1 is about to
+  move through on the way to 100+. (This sentence read "growth in the same language widens the
+  margin" until 2026-07-17. True at the endpoints, false as a trend, and misleading about precisely
+  the growth this project is about to do. Fourth instance of the same defect in three days, in the
+  paragraph that congratulates itself on re-measuring: the figures were right and the verb was not.)
+  Growth with alien
   vocabulary erodes it (`0.283` at 2000 added synthetic chunks — refused, but closer), because `base`
   is a ratio of IDF sums and drifts toward the query's plain matched-token fraction, which for this
   question is `3/10` — the threshold exactly. See `docs/eval-harness.md`. Mixed-language corpora are
@@ -129,9 +150,20 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   Closed 2026-07-16 **on the in-memory fixture path only** (the served Postgres path is H-14 and is
   untouched). `retrieveChunks` now filters `finalChunks` to the same threshold the gate uses, and a
   refusal returns no chunks at all. Probes: `retrieval.unit.test.ts` › "a citation clears the same bar
-  as the gate" (3 tests) and › "a duty is never retrievable without its exception" (3 tests). All six
-  were mutation-falsified: removing the filter reproduces the original defect
+  as the gate" (5 tests) and › "a duty is never retrievable without its exception" (3 tests). All were
+  mutation-falsified: removing the filter reproduces the original defect
   (`cited art50-first-contact-accessibility below the evidence bar: expected 0.218509 to be >= 0.3`).
+  **`pnpm eval` does not verify this item and never did** — `scoreCitationAccuracy` is recall-only, so
+  deleting the filter still leaves it `passed: true` at `citation-accuracy: 1` (measured 2026-07-17).
+  The unit tests are the whole guard.
+  Extended 2026-07-17: the threshold is now validated at the entry to both retrieval paths
+  (`parseThreshold`, mirroring `parseTopK`). A non-finite threshold used to disable the bar in both
+  directions at once and silently, because every comparison against `NaN` is false — nothing was ever
+  refused and every citation was dropped, producing an answer asserted from zero cited chunks. That is
+  this item's own falsifier, reachable by config rather than by a retrieval bug. Found by the fourth
+  cross-vendor audit (gpt-5.6-sol, 2026-07-17), which named the in-memory path; the Postgres path
+  carried the identical hole and was fixed in the same change, since fixing a named defect and leaving
+  its twin is how the defect survives.
   Found by the third cross-vendor audit (gpt-5.5, 2026-07-16). `0.3` was applied at the QUERY level —
   "is there any evidence?" — while `finalChunks` returned `topK` regardless of each chunk's own score.
   So a chunk at `0.265` was simultaneously not-evidence (if best) and evidence (as a citation).
@@ -161,16 +193,26 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   **Root cause was the chunking, not the scorer.** Article 50 states a duty and then narrows it with
   a counter-clause naming its subject anaphorically. Four of the five exception chunks opened with the
   identical string "Diese Pflicht gilt nicht", the fifth with "Ist der Inhalt"; none named the duty it
-  limited. Two measured consequences: an exception was unreachable from its own duty's question (it
-  shared exactly ONE token with it — "wenn", a stopword), and the exceptions were mutually
-  indistinguishable — on the `contradictory` question all five scored `0.61`–`0.92` by matching each
-  other's vocabulary. So the corpus was re-cut along the Absätze: **14 chunks → 8**, each duty
+  limited. Two measured consequences. An exception was unreachable from its own duty's question (it
+  shared exactly ONE token with it — "wenn", a stopword). And an exception drew its neighbours: on the
+  `contradictory` question, which names only the law-enforcement carve-out, the intended chunk did
+  rank first (`0.9158`) but three unrelated exception chunks followed at `0.8152`, `0.7661` and
+  `0.6623`, and `art50-deepfake` — a duty, not an exception — landed among them at `0.6075`. All five
+  cleared the `0.3` bar and would be cited; four of them are wrong. The fifth exception,
+  `art50-deepfake-artistic`, scored `0.0` and was invisible. So the exception chunks were not so much
+  indistinguishable from each other as unanchored: they matched on shared counter-clause vocabulary
+  ("Diese Pflicht gilt nicht") rather than on the duty they limit, which is also why the one that
+  shares no such vocabulary vanished entirely. So the corpus was re-cut along the Absätze: **14 chunks → 8**, each duty
   carrying the exception that limits it. `art50-deepfake` already did this inline and was the
   precedent. The four `corpus provenance` tests pass unmodified — the re-cut is still verbatim and
   still accounts for the whole source in order.
-  With both changes, `pnpm eval` is `passed: true` at citation-accuracy `1.0`, and the filter is
-  demonstrably doing work rather than passing vacuously: survivors per golden case are 2, 1, 1, 5 and
-  0 out of a possible 8.
+  With both changes, `pnpm eval` is `passed: true` at citation-accuracy `1.0`. That number is not
+  evidence for this item and must not be read as any: `scoreCitationAccuracy` is recall-only, so
+  deleting the filter entirely still yields `passed: true` at `citation-accuracy: 1` (measured
+  2026-07-17). What shows the filter is doing work rather than passing vacuously is the survivor
+  count — 2, 1, 1, 5 and 0 out of a possible 8, instead of 8 every time — and what *guards* it is
+  `retrieval.unit.test.ts` › "a citation clears the same bar as the gate", which goes red when the
+  filter is removed. The eval is blind here; see `docs/eval-harness.md`.
   **What this cost:** citation granularity. A citation now points at a duty together with its
   carve-out rather than at either alone. For an audit-grade product that is arguably the better unit —
   a duty is never displayed without what limits it — but it is a real loss of precision and it is a
