@@ -74,18 +74,34 @@ function bestEvidenceScores(
   return scores;
 }
 
-// The threshold decides both whether evidence exists and which chunks may be cited, so a value that
-// is not a number silently turns both off rather than failing: `NaN < NaN` is false, so the gate
-// never refuses, and `score >= NaN` is false, so every citation is dropped. The result is an answer
-// asserted from zero cited chunks — the exact shape H-15 exists to make impossible. Scores are
-// coverage ratios in [0,1] by construction, so a threshold outside that range makes the gate a
-// constant and is a configuration error, not a tuning choice.
+// The threshold decides both whether evidence exists and which chunks may be cited, so the values
+// worth rejecting are the ones that turn both off WITHOUT failing. Two of them:
+//
+//   NaN — every comparison against it is false, so `best < NaN` never refuses and `score >= NaN`
+//   drops every citation. The result answers from zero cited chunks.
+//   0 — `bestEvidenceScore` is `Math.max(0, …)` and scores are non-negative, so `best < 0` is never
+//   true and `score >= 0` is always true. The gate never refuses and the filter is a no-op.
+//   Measured: at `0` the out-of-corpus banking question is answered, citing 8 chunks of the AI Act.
+//
+// Rejecting only non-finite values would have left `0` — the plainest way to silently disable the
+// property this function exists to protect. The first version of this guard did exactly that, and
+// permitted `0` on purpose, reasoning it was a coherent "gate off" setting. A gate that is off is
+// the defect, not a configuration.
+//
+// There is deliberately NO upper bound. It is tempting, because the in-memory scorer is a coverage
+// ratio in [0,1] and a threshold above 1 is useless there — but useless LOUDLY: everything is
+// refused, which is self-evident within one query. The danger is only downward, where the failure is
+// silent. And an upper bound would be wrong on the other caller: `postgres-retrieval.ts` compares
+// this threshold against raw `ts_rank_cd`, which is unnormalized and not bounded by 1, and against
+// `1 - (embedding <=> …)`, which is a cosine distance in [0,2] mapped to [-1,1]. A shared [0,1]
+// contract would throw on a legitimate stricter Postgres cutoff. (That the two paths share one
+// threshold across two incompatible score scales at all is H-14's problem, not this guard's.)
 export function parseThreshold(threshold: number | undefined): number {
   if (threshold === undefined) {
     return defaultThreshold;
   }
-  if (!Number.isFinite(threshold) || threshold < 0 || threshold > 1) {
-    throw new Error("out_of_corpus_threshold must be a finite number from 0 through 1");
+  if (!Number.isFinite(threshold) || threshold <= 0) {
+    throw new Error("out_of_corpus_threshold must be a finite number greater than 0");
   }
   return threshold;
 }

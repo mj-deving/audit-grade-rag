@@ -157,13 +157,24 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   deleting the filter still leaves it `passed: true` at `citation-accuracy: 1` (measured 2026-07-17).
   The unit tests are the whole guard.
   Extended 2026-07-17: the threshold is now validated at the entry to both retrieval paths
-  (`parseThreshold`, mirroring `parseTopK`). A non-finite threshold used to disable the bar in both
-  directions at once and silently, because every comparison against `NaN` is false — nothing was ever
-  refused and every citation was dropped, producing an answer asserted from zero cited chunks. That is
-  this item's own falsifier, reachable by config rather than by a retrieval bug. Found by the fourth
-  cross-vendor audit (gpt-5.6-sol, 2026-07-17), which named the in-memory path; the Postgres path
-  carried the identical hole and was fixed in the same change, since fixing a named defect and leaving
-  its twin is how the defect survives.
+  (`parseThreshold`, mirroring `parseTopK`). Two values disabled the bar without failing. `NaN`,
+  because every comparison against it is false: nothing was refused AND every citation was dropped,
+  producing an answer asserted from zero cited chunks. And `0`, because scores are non-negative and
+  `bestEvidenceScore` is `Math.max(0, …)`: nothing is refused and the filter is a no-op. Measured at
+  `0`, the out-of-corpus banking question is answered citing 8 chunks of the AI Act — H-10's defect,
+  reachable by config alone. The guard rejects both; it has no upper bound, because a threshold above
+  the scorer's range fails loudly and because the Postgres ranks are not bounded by 1 (see below).
+  `NaN` was found by the fourth cross-vendor audit (gpt-5.6-sol, 2026-07-17). `0` was found by
+  autoreview on the fix itself, which had permitted it deliberately — the first guard against silently
+  disabling the bar left in the plainest way to silently disable the bar.
+  **The Postgres path had a related hole, not the identical one**, and the first version of this
+  paragraph said "identical". It has no citation filter at all (`finalChunks` is
+  `mergedCandidates.slice(0, topK)`), so a bad threshold there broke only the refusal flag; the
+  citations were never dropped, because they were never filtered. Both paths are guarded now, but the
+  failures they had were different, and the shared threshold remains meaningless on the Postgres side
+  regardless: it is compared against raw `ts_rank_cd` (unnormalized, not bounded by 1) and against
+  `1 - (embedding <=> …)` (a cosine distance in [0,2], so [-1,1]), neither of which is the in-memory
+  scorer's [0,1] coverage ratio. That is H-14.
   Found by the third cross-vendor audit (gpt-5.5, 2026-07-16). `0.3` was applied at the QUERY level —
   "is there any evidence?" — while `finalChunks` returned `topK` regardless of each chunk's own score.
   So a chunk at `0.265` was simultaneously not-evidence (if best) and evidence (as a citation).
