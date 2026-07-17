@@ -221,14 +221,21 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   `a refusal must cite nothing: expected [ … ] to have a length of +0 but got 8`.
   **OPEN: a sub-threshold chunk can still be cited on an ANSWERED query here.** The first version of
   this fix closed that too, by copying the in-memory per-chunk filter across, and **it was wrong and
-  autoreview caught it within the hour.** `bestEvidenceScores` takes `max(dense, ts_rank_cd)`, and
-  ts_rank_cd never exceeds `0.1` against a `0.3` bar (measured, see H-14), so on this path that filter
-  does not select evidence — **it deletes the lexical ranker.** An exact legal-text match with
-  mediocre dense similarity gets dropped from the citations even when RRF ranks it first, and the
-  answer generates from weaker dense evidence instead. On the fixture that filter took an answered
-  trace from 6 citations to 1 and I read the drop as the fix working; it was the bug. Applying a bar
-  calibrated for another scale is H-14 wearing a fix's clothes, and it is a worse defect than the one
-  it closes. Reverted. The per-chunk half waits on H-14: normalize the rankers, or give each its own
+  autoreview caught it within the hour.** On the fixture that filter took an answered trace from 6
+  citations to 1, and I read the drop as the fix working; it was the bug. Applying a bar calibrated
+  for another scale is H-14 wearing a fix's clothes, and it is a worse defect than the one it closes.
+  Reverted.
+  **The reason first given for reverting was itself false**, and a cross-vendor audit refuted it a
+  day later: "ts_rank_cd never exceeds `0.1`, so the filter necessarily deletes the lexical ranker."
+  It does not necessarily do anything of the kind — `ts_rank_cd` reaches `0.3` at three occurrences
+  of a query term and keeps climbing (see H-14). The `0.1` was the fixture's, not the ranker's.
+  The real reason is worse for the bar rather than better: `max(dense, ts_rank_cd)` compares two
+  incommensurable scales against a number calibrated for a third. A lexical `0.3` means "repeated a
+  term three times"; a dense `0.3` means something else; the bar means "30% IDF-weighted coverage" on
+  a path that is not this one. Such a filter would neither reliably keep evidence nor reliably drop
+  non-evidence — it would sort chunks by an arithmetic accident. Deferring is right; the first
+  justification for deferring was a universal claim generalized from a fixture, which is the H-10
+  defect again. The per-chunk half waits on H-14: normalize the rankers, or give each its own
   criterion, then filter.
   H-14 stays open and is now MEASURED rather than read off the code — see below.
   Found by the third cross-vendor audit (gpt-5.5, 2026-07-16). `0.3` was applied at the QUERY level —
@@ -302,11 +309,17 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   real BGE-M3 endpoint, so the dense figures below come from `HashEmbeddingProvider` and the item
   stays open on that ground — the *lexical* figures do not depend on the embedder and are production-
   real.
-  - **`ts_rank_cd` can never clear this bar.** Measured across every probe, answered and refused
-    alike, it returned `0`–`0.1` against a threshold of `0.3`. So the lexical ranker contributes
-    nothing to the gate: the refusal decision on the served path is made by the dense score alone, and
-    the bm25 half only influences fusion RANK. A lexical-only match — the exact case German legal
-    vocabulary produces — cannot open the gate no matter how good it is.
+  - **`0.3` against `ts_rank_cd` means "repeats a query term three times".** Measured against
+    `pgvector/pgvector:pg16`: one occurrence scores `0.1`, five score `0.5`, twenty score `2`, a
+    hundred score `10`. `ts_rank_cd` is unnormalized and unbounded and rises linearly with term
+    frequency, so comparing it to a coverage RATIO is not a strict-or-lenient question, it is a
+    category error. Word count is not evidence, and that is the sharpest statement of this item.
+    (This bullet read "**`ts_rank_cd` can never clear this bar** … the lexical ranker contributes
+    nothing to the gate" until 2026-07-17, generalized from the fixture's `0`–`0.1`. A cross-vendor
+    audit refuted it with the table above. The `0.1` was never a property of `ts_rank_cd` — it is a
+    property of this fixture, where every chunk mentions a query term exactly once. A universal claim
+    from three queries is the H-10 defect above, committed inside the item that documents it, in
+    capitals.)
   - **The bar sits `0.04` above the dense noise floor.** Unrelated content scored ~`0.26` and the one
     genuinely relevant chunk scored `0.691897`, against a bar of `0.3`. The separation is real but the
     bar's placement inside it is luck, not calibration: it was tuned for a different scorer entirely.
@@ -327,9 +340,10 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
     `bestEvidenceScore` takes the `max` of the two seeded at 0, so the larger-scaled dense score
     decides the gate and a negative dense score is hidden from it. Three scales, one constant.
     **This is why the citation filter cannot simply be copied from the other path**, which was tried
-    on 2026-07-17 and reverted the same hour: `max(dense, ts_rank_cd)` against `0.3` cannot be
-    cleared by a lexical score that tops out at `0.1`, so the filter deletes the lexical ranker rather
-    than selecting evidence. Closing that half of H-15 here requires closing this item first.
+    on 2026-07-17 and reverted the same hour: `max(dense, ts_rank_cd)` against `0.3` compares two
+    incommensurable scales against a number calibrated for a third, so it sorts chunks by an
+    arithmetic accident rather than selecting evidence. Closing that half of H-15 here requires
+    closing this item first.
   - `plainto_tsquery('simple', ...)` applies no stemming and no stopword removal, so the lexical
     half carries the same German-stopword exposure H-10 just fixed on the other path.
   - The only refusal probe is still `"zzzz yyyyy xxxx"`

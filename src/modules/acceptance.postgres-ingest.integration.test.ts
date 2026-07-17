@@ -177,6 +177,22 @@ async function runRetrievalAssertions(pool: Pool, dir: string): Promise<void> {
     embeddingProvider,
   );
 
+  assertSnapshotBoundRetrieval(trace, currentTrace, firstSnapshotId, secondSnapshotId);
+  expect(refused.outOfCorpus).toBe(true);
+  assertRefusalCitesNothing(trace, refused);
+  assertH14ScaleMismatch({
+    all: [trace, currentTrace, refused],
+    scaleProbe: currentTrace,
+    refused,
+  });
+}
+
+function assertSnapshotBoundRetrieval(
+  trace: RetrievalTrace,
+  currentTrace: RetrievalTrace,
+  firstSnapshotId: string,
+  secondSnapshotId: string,
+): void {
   expect(trace.vectorCandidates).toHaveLength(50);
   expect(trace.bm25Candidates).toHaveLength(50);
   expect(trace.finalChunks).toHaveLength(8);
@@ -189,22 +205,14 @@ async function runRetrievalAssertions(pool: Pool, dir: string): Promise<void> {
   // Still `topK`, and deliberately so. A per-chunk evidence filter briefly landed here on 2026-07-17
   // and took this to 1, which looked like the H-15 fix working: of the 58 merged candidates exactly
   // one clears `0.3` (`0.691897`), the other 57 sit at `0.259`–`0.295`. But on this path that filter
-  // reads `max(dense, ts_rank_cd)`, and ts_rank_cd never exceeds `0.1`, so it cannot select evidence
-  // — it deletes the lexical ranker, dropping an exact legal-text match with mediocre dense
-  // similarity even when RRF ranks it first. It was reverted. See H-14: the bar is calibrated for a
-  // scale this path does not use, and the dense baseline between unrelated content (~`0.26`) sits
-  // `0.04` under it, so its placement here is luck, not calibration.
+  // reads `max(dense, ts_rank_cd)` against a bar calibrated for neither, so it sorts chunks by an
+  // arithmetic accident rather than selecting evidence. It was reverted. See H-14: a lexical `0.3`
+  // means "repeats a term three times", and the dense baseline between unrelated content (~`0.26`)
+  // sits `0.04` under the bar, so its placement here is luck, not calibration.
   expect(currentTrace.finalChunks).toHaveLength(6);
   expect(
     currentTrace.finalChunks.every((chunk) => chunk.corpusSnapshotId === secondSnapshotId),
   ).toBe(true);
-  expect(refused.outOfCorpus).toBe(true);
-  assertRefusalCitesNothing(trace, refused);
-  assertH14ScaleMismatch({
-    all: [trace, currentTrace, refused],
-    scaleProbe: currentTrace,
-    refused,
-  });
 }
 
 // H-14, pinned rather than described. These four numbers are the entire argument for why the shared
@@ -228,9 +236,20 @@ function assertH14ScaleMismatch(probes: {
   const lexical = probes.all.flatMap((trace) =>
     trace.bm25Candidates.map((chunk) => chunk.retrievalScore),
   );
-  // The finding: ts_rank_cd tops out at 0.1 against a 0.3 bar, so the lexical ranker can NEVER open
-  // the gate or clear a citation filter. The served refusal is decided by the dense score alone.
-  expect(Math.max(...lexical), "ts_rank_cd cannot reach the evidence bar").toBeLessThan(0.3);
+  // This fixture's lexical scores are 0..0.1, and that is a fact about THIS FIXTURE: every chunk
+  // mentions a query term exactly once, and ts_rank_cd pays 0.1 per occurrence. It is NOT a ceiling
+  // on ts_rank_cd, and the comment here said it was until a cross-vendor audit ran the numbers
+  // against pgvector/pgvector:pg16: 1 occurrence -> 0.1, five -> 0.5, twenty -> 2, a hundred -> 10.
+  // Unnormalized, unbounded, linear in term frequency. A universal claim from three fixture queries,
+  // which is the H-10 defect this repo already retracted once.
+  //
+  // So the assertion says what it can: on this fixture the lexical half does not reach the bar, which
+  // is why the served gate is dense-decided HERE. Real German legal prose repeating "Auditpflicht"
+  // three times would clear 0.3 on word count alone — that is H-14, and it is why the bar is
+  // meaningless on this path rather than merely miscalibrated.
+  expect(Math.max(...lexical), "this fixture's lexical scores stay under the bar").toBeLessThan(
+    0.3,
+  );
   expect(round6(Math.max(...lexical))).toBe(0.1);
   // `scaleProbe` is named rather than positional because the docs' dense figures come from ONE
   // specific query ("Aktualisierte Auditpflicht"), and the first version of this took whichever
@@ -257,11 +276,16 @@ function assertH14ScaleMismatch(probes: {
   expect(0.3 - Math.min(...dense), "the bar's headroom over the noise floor").toBeLessThan(0.05);
   // pgvector's `<=>` is a cosine DISTANCE in [0,2], so `1 - (…)` lands in [-1,1] and goes negative.
   // The sign is the property; the value is what the docs quote, so both are asserted.
-  const refusedDenseFloor = Math.min(
-    ...probes.refused.vectorCandidates.map((chunk) => chunk.retrievalScore),
-  );
+  const refusedDense = probes.refused.vectorCandidates.map((chunk) => chunk.retrievalScore);
+  const refusedDenseFloor = Math.min(...refusedDense);
   expect(refusedDenseFloor, "the dense score is not bounded below by 0").toBeLessThan(0);
   expect(round6(refusedDenseFloor)).toBe(-0.026972);
+  // The docs quote the refused range as `-0.026972..0.014098`, and only the floor was asserted —
+  // shifting the max to 0.024098 left all three integration tests green. Both ends of a quoted range
+  // are quoted, so both ends get an assertion. (Found by a cross-vendor audit, which is fair: it is
+  // the same series-vs-endpoint hole as everywhere else in this file's history, this time inside the
+  // guard written to close it.)
+  expect(round6(Math.max(...refusedDense))).toBe(0.014098);
 }
 
 function round6(value: number): number {
@@ -280,9 +304,10 @@ function round6(value: number): number {
 //
 // The OTHER half of H-15 — no sub-threshold chunk cited on an ANSWERED query — is not asserted here,
 // and its absence is deliberate rather than an oversight. It holds on the in-memory path, where the
-// bar and the scores are the same scale. Here they are not (H-14: ts_rank_cd tops out at 0.1 against
-// a 0.3 bar), so asserting it would pin the very behaviour that made the first fix wrong: dropping
-// every lexical-only match from the citations. That assertion belongs here the day H-14 closes.
+// bar and the scores share a scale. Here they do not (H-14: a lexical `0.3` means "repeats a term
+// three times", a dense `0.3` means something else, and the bar was calibrated for a third thing
+// entirely), so asserting it would pin a filter that sorts by an arithmetic accident. That assertion
+// belongs here the day H-14 closes.
 //
 // Mutation-falsified 2026-07-17 by removing the refusal-emptying from `postgres-retrieval.ts`, with
 // the snapshot/topK assertions masked so this function had to catch it alone. It does:

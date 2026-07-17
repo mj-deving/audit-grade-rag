@@ -54,18 +54,41 @@ export async function retrievePostgresChunks(
   // this expression lands in [-1,1] and CAN be negative. Measured, not inferred: the out-of-corpus
   // probe produced -0.026972. Seeding at 0 keeps a wholly-opposed corpus reporting 0 rather than a
   // negative best score, which is the refusing direction and therefore safe.
-  const bestEvidenceScore = Math.max(
-    0,
-    ...vectorCandidates.map((chunk) => chunk.retrievalScore),
-    ...bm25Candidates.map((chunk) => chunk.retrievalScore),
-  );
-  // H-14, open, and now measured rather than read off the code. `evidenceThreshold` is calibrated on
-  // the in-memory scorer's IDF-weighted coverage ratio in [0,1]. Neither ranker here produces that.
-  // Against a live pgvector: `ts_rank_cd` returned 0..0.1 across every probe, answered and refused
-  // alike, so THE LEXICAL RANKER CAN NEVER CLEAR THIS BAR — the gate is decided by the dense score
-  // alone, and the bm25 half contributes nothing but fusion rank. The dense scores came from
-  // `HashEmbeddingProvider`; a real BGE-M3 embedder puts them somewhere else again. One bar, two
-  // scales, both wrong for it.
+  //
+  // Non-finite scores are dropped BEFORE the max, and that is the load-bearing part. `Math.max` is
+  // NaN-poisoning: one NaN anywhere in the list makes the whole max NaN, and `NaN < threshold` is
+  // false, so the gate concludes evidence EXISTS and the path answers. A refusal failing open is the
+  // worst outcome this product has. pgvector reaches NaN from an all-zero query vector
+  // (`'[0,0,0]'::vector <=> '[1,2,3]'::vector` → NaN, verified against pgvector/pgvector:pg16), so
+  // this is a real input, not a hypothetical. `embedding.ts` now rejects such a vector at the
+  // boundary; this is the second line, because a gate that depends on every upstream source being
+  // well-behaved is not a gate.
+  //
+  // Found by a cross-vendor audit of the commit that claimed `outOfCorpus ? [] : …` closes the
+  // refusal half "on any score scale". It does not. It closes it on any FINITE score scale, and NaN
+  // is not a scale — it is the absence of one.
+  const finiteScores = [...vectorCandidates, ...bm25Candidates]
+    .map((chunk) => chunk.retrievalScore)
+    .filter((score) => Number.isFinite(score));
+  const bestEvidenceScore = Math.max(0, ...finiteScores);
+  // H-14, open. `evidenceThreshold` is calibrated on the in-memory scorer's IDF-weighted coverage
+  // ratio in [0,1]. Neither ranker here produces that.
+  //
+  // What `0.3` actually means against `ts_rank_cd`: "the chunk repeats a query term at least three
+  // times". Measured against pgvector/pgvector:pg16 — one occurrence scores 0.1, five score 0.5,
+  // twenty score 2, a hundred score 10. It is unnormalized and unbounded and rises linearly with
+  // term frequency, so comparing it to a coverage RATIO is not a strict comparison, it is a category
+  // error. Word count is not evidence.
+  //
+  // (This comment claimed "ts_rank_cd returned 0..0.1 across every probe, so THE LEXICAL RANKER CAN
+  // NEVER CLEAR THIS BAR". A cross-vendor audit refuted it with the table above. The 0.1 was never a
+  // property of ts_rank_cd — it is the fixture's, where each chunk happens to mention the term once.
+  // A universal claim generalized from three fixture queries, which is precisely the defect H-10 in
+  // docs/HARDENING.md exists to retract, written in capitals.)
+  //
+  // The dense side is no better and differently so: `HashEmbeddingProvider` puts it at 0.259..0.692
+  // in the fixture, and a real BGE-M3 embedder puts it somewhere else again. One bar, two scales,
+  // neither of them its own.
   const outOfCorpus = bestEvidenceScore < evidenceThreshold;
   // H-15 on this path, closed on the half that is provable and left open on the half that is not.
   //
@@ -78,19 +101,35 @@ export async function retrievePostgresChunks(
   // so on a refusal every chunk is under the bar anyway: emptying the list drops nothing that a
   // per-chunk filter would have kept.
   //
-  // OPEN: on an ANSWERED query, chunks below the bar can still be cited. The in-memory path filters
+  // OPEN: on an ANSWERED query, a chunk below the bar can still be cited. The in-memory path filters
   // them per-chunk; this path deliberately does not, and the first version of this fix did. It was
-  // wrong, and autoreview caught it: `bestEvidenceScores` takes `max(dense, ts_rank_cd)`, and since
-  // ts_rank_cd never exceeds 0.1 against a 0.3 bar, a chunk's lexical score can never carry it over.
-  // So a filter here does not select evidence, it deletes the lexical ranker: an exact legal-text
-  // match with mediocre dense similarity gets dropped from the citations even when RRF ranks it
-  // first, and the answer generates from weaker dense evidence instead. That is a worse defect than
-  // the one being fixed, and it is H-14 wearing a fix's clothes — applying a bar calibrated for a
-  // scale this path does not use.
+  // wrong, and autoreview caught it — but the reason given then was ALSO wrong, and a cross-vendor
+  // audit caught that in turn. Both are worth keeping straight:
+  //
+  // The stated reason was "ts_rank_cd never exceeds 0.1, so the filter necessarily deletes the
+  // lexical ranker". False. ts_rank_cd reaches 0.3 at three occurrences of a query term and keeps
+  // climbing (see the table below). The filter does not NECESSARILY delete lexical evidence.
+  //
+  // The real reason is worse for the bar, not better: `max(dense, ts_rank_cd)` compares two
+  // incommensurable scales against a number calibrated for a third. A lexical score of 0.3 means
+  // "repeated a term three times"; a dense score of 0.3 means something else entirely; the bar means
+  // "30% IDF-weighted coverage" on a path that is not this one. So the filter would neither reliably
+  // keep evidence nor reliably drop non-evidence — it would sort chunks by an arithmetic accident.
+  // Deferring is right; the earlier justification for deferring was a universal claim from a fixture.
   //
   // The per-chunk half therefore waits on H-14: normalize these rankers, or give each its own
   // criterion, and then filter. Not before.
-  const finalChunks = outOfCorpus ? [] : mergedCandidates.slice(0, topK);
+  // A chunk whose own score is non-finite is dropped too. That is NOT the per-chunk evidence filter
+  // deferred to H-14 — this needs no calibrated scale, because NaN is not a low score, it is the
+  // absence of a score. Citing a chunk the ranker could not rank is indefensible on every scale.
+  const scorable = new Set(
+    [...vectorCandidates, ...bm25Candidates]
+      .filter((chunk) => Number.isFinite(chunk.retrievalScore))
+      .map((chunk) => chunk.chunkId),
+  );
+  const finalChunks = outOfCorpus
+    ? []
+    : mergedCandidates.filter((chunk) => scorable.has(chunk.chunkId)).slice(0, topK);
   return {
     vectorCandidates,
     bm25Candidates,
