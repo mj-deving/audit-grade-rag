@@ -241,11 +241,19 @@ function assertH14ScaleMismatch(probes: {
   // separation is real, but 0.3 sits only ~0.04 above the noise floor, and that placement is luck:
   // the bar was tuned for the in-memory scorer, which is not this.
   //
-  // Exact to 6dp, matching what the docs quote. `toBeCloseTo(…, 5)` would let 0.691897 drift to
-  // 0.691901 while staying green — a stale figure with a passing test, i.e. the thing this helper
-  // exists to prevent, one order of magnitude smaller.
+  // Each figure at the precision the docs PUBLISH it, which is the whole of ISC-24 and cuts both
+  // ways. `HARDENING.md` quotes the peak as `0.691897`, so that is exact to 6dp: `toBeCloseTo(…, 5)`
+  // would let it drift to `0.691901` and stay green, leaving the doc stale with a passing test.
+  //
+  // The floor it publishes only as "~`0.26`", never as `0.259852` — so pinning six digits there
+  // guards nothing and fails CI on harmless movement. The first version of this did exactly that,
+  // over-correcting the P2 above it by one turn of the same screw. Same rule, other direction:
+  // assert at the precision the claim makes, not looser AND not tighter.
   expect(round6(Math.max(...dense))).toBe(0.691897);
-  expect(round6(Math.min(...dense))).toBe(0.259852);
+  expect(Math.min(...dense), "the dense noise floor sits at ~0.26").toBeCloseTo(0.26, 2);
+  // …and the claim that figure serves: the bar has ~0.04 of headroom over the noise, which is why
+  // its placement on this path is luck rather than calibration.
+  expect(0.3 - Math.min(...dense), "the bar's headroom over the noise floor").toBeLessThan(0.05);
   // pgvector's `<=>` is a cosine DISTANCE in [0,2], so `1 - (…)` lands in [-1,1] and goes negative.
   // The sign is the property; the value is what the docs quote, so both are asserted.
   const refusedDenseFloor = Math.min(
