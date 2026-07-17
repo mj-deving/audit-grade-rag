@@ -62,8 +62,6 @@ export const pinnedEvalTuple: PinnedEvalTuple = {
   corpusSnapshotId: "corpus-fixtures:v1",
 };
 
-const fixtureCorpusSnapshotHash = sha256Hex(pinnedEvalTuple.corpusSnapshotId);
-
 export async function loadGoldenSet(path: string): Promise<readonly GoldenCase[]> {
   return parseGoldenSet(await readFile(path, "utf8"));
 }
@@ -216,7 +214,24 @@ export async function loadFixtureCorpus(corpusDir: string): Promise<readonly Cor
     }
     seenIn.set(chunk.chunkId, chunk.sourcePath);
   }
-  return chunks;
+  const corpusSnapshotHash = computeFixtureCorpusSnapshotHash(chunks);
+  return chunks.map((chunk) => ({ ...chunk, corpusSnapshotHash }));
+}
+
+/**
+ * The snapshot hash that the ledger, eval outcomes and demo rows attest MUST be recomputable from
+ * the corpus, not from its label. It once was `sha256(corpusSnapshotId)` — a hash of the string
+ * "corpus-fixtures:v1" — so a signed row could not be verified against the corpus it named, which
+ * is the failure this product exists to disprove. This mirrors the ingest path's content hash
+ * (`ingest.ts`: sha256 of the joined content SHAs, folded with the chunk count): a canonical
+ * manifest over each chunk's id and its own SHA, sorted so read order cannot change it, then folded
+ * with the count so a re-chunk moves it. Change a corpus byte and this moves; change only the label
+ * and it does not.
+ */
+export function computeFixtureCorpusSnapshotHash(chunks: readonly CorpusChunk[]): string {
+  const manifest = chunks.map((chunk) => `${chunk.chunkId}:${chunk.chunkSha256}`).sort();
+  const base = sha256Hex(manifest.join("|"));
+  return sha256Hex(`${base}:${String(chunks.length)}`);
 }
 
 export type ParsedFixtureChunk = {
@@ -290,7 +305,9 @@ function fixtureChunk(
     chunkText,
     chunkSha256: sha256Hex(chunkText),
     corpusSnapshotId: pinnedEvalTuple.corpusSnapshotId,
-    corpusSnapshotHash: sha256Hex("corpus-fixtures:v1"),
+    // Stamped by loadFixtureCorpus once the whole corpus is known — the corpus hash cannot be
+    // computed from a single chunk, and hashing the label here was the H-12 defect.
+    corpusSnapshotHash: "",
     extractionWarnings: [],
     ocrUsed: false,
   };
@@ -308,7 +325,7 @@ export function runGoldenCase(
     query: goldenCase.question,
     trace,
     corpusSnapshotId: tuple.corpusSnapshotId,
-    corpusSnapshotHash: fixtureCorpusSnapshotHash,
+    corpusSnapshotHash: computeFixtureCorpusSnapshotHash(chunks),
     provider: new EvalCitedProvider(tuple.modelVersion),
     promptTemplate: {
       ...defaultPromptTemplate,
