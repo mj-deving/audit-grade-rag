@@ -44,6 +44,25 @@ describe("the fixture corpus snapshot hash is derived from the corpus, not its l
     expect(computeFixtureCorpusSnapshotHash(mutated)).not.toBe(before);
   });
 
+  it("moves when only the chunk text changes, even if the stored chunkSha256 is left stale", async () => {
+    // The cross-vendor audit's finding (gpt-5.6-sol, 2026-07-17): the manifest must digest the TEXT
+    // the ledger serves, not the stored chunkSha256 field. The test above moved BOTH the text and the
+    // sha, so it never probed a chunk whose stored sha had drifted from its bytes — and the first fix
+    // hashed the field, so an edit to the text alone left the hash unmoved and a signed row attesting
+    // text it did not match. Here chunkSha256 is deliberately NOT updated; the hash must still move.
+    const chunks = await loadFixtureCorpus(defaultCorpusFixtureDir);
+    const before = computeFixtureCorpusSnapshotHash(chunks);
+    const first = chunks[0];
+    expect(first).toBeDefined();
+    if (first === undefined) {
+      return;
+    }
+    const mutated = chunks.map((chunk, index) =>
+      index === 0 ? { ...chunk, chunkText: `${chunk.chunkText} tampered` } : chunk,
+    );
+    expect(computeFixtureCorpusSnapshotHash(mutated)).not.toBe(before);
+  });
+
   it("moves when a chunk id is renamed, even if the text is untouched", async () => {
     // Re-chunking and id renames are corpus changes the source bytes alone would not show. The
     // manifest carries chunk ids so a structural change to the corpus is also attested.

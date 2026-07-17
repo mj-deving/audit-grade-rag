@@ -22,9 +22,11 @@ The default pinned tuple for `pnpm eval` is, as `pnpm eval` reports it:
 - corpus snapshot: `corpus-fixtures:v1`
 
 The `bge-m3` entry is a label, not a description of the eval path: no embedding is computed here (see
-above). `corpusSnapshotHash` is currently `sha256("corpus-fixtures:v1")` — a hash of that label, not
-of the corpus. It cannot be recomputed from the source snapshot and does not move when the corpus
-changes. Tracked as H-12 in `docs/HARDENING.md`.
+above). `corpusSnapshotHash` is derived from the corpus content, not its label. It is a SHA-256 over
+a canonical-JSON manifest of every chunk's id paired with the SHA-256 of its text, sorted so read
+order cannot change it and folded with the chunk count. A third party can recompute it from the
+published corpus, and it moves when any corpus byte changes. Closed as H-12 in `docs/HARDENING.md`;
+probes in `src/modules/eval/corpus-snapshot-hash.unit.test.ts`.
 
 ## What this harness measures — and what it does not
 
