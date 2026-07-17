@@ -19,6 +19,10 @@ const candidateLimit = 50;
 const defaultTopK = 8;
 const defaultThreshold = 0.3;
 const rrfK = 60;
+// `scoreChunk` returns `roundScore(Math.min(1, base + lengthBonus))` over a non-negative `base`, so
+// every score this path produces is in [0,1]. Deliberately NOT exported: `postgres-retrieval.ts`
+// ranks on a different scale and declares its own ceiling.
+const inMemoryScoreCeiling = 1;
 
 export function retrieveChunks(
   query: string,
@@ -36,7 +40,7 @@ export function retrieveChunks(
   );
   const bm25Candidates = rankCandidates(query, activeChunks, "bm25", idf).slice(0, candidateLimit);
   const mergedCandidates = reciprocalRankFusion(vectorCandidates, bm25Candidates);
-  const threshold = parseThreshold(options.outOfCorpusThreshold);
+  const threshold = parseThreshold(options.outOfCorpusThreshold, inMemoryScoreCeiling);
   const evidenceScores = bestEvidenceScores(vectorCandidates, bm25Candidates);
   const bestEvidenceScore = Math.max(0, ...evidenceScores.values());
   // A cited chunk clears the same bar that decides whether evidence exists at all. `0.3` used to be a
@@ -88,20 +92,27 @@ function bestEvidenceScores(
 // permitted `0` on purpose, reasoning it was a coherent "gate off" setting. A gate that is off is
 // the defect, not a configuration.
 //
-// There is deliberately NO upper bound. It is tempting, because the in-memory scorer is a coverage
-// ratio in [0,1] and a threshold above 1 is useless there — but useless LOUDLY: everything is
-// refused, which is self-evident within one query. The danger is only downward, where the failure is
-// silent. And an upper bound would be wrong on the other caller: `postgres-retrieval.ts` compares
-// this threshold against raw `ts_rank_cd`, which is unnormalized and not bounded by 1, and against
-// `1 - (embedding <=> …)`, which is a cosine distance in [0,2] mapped to [-1,1]. A shared [0,1]
-// contract would throw on a legitimate stricter Postgres cutoff. (That the two paths share one
-// threshold across two incompatible score scales at all is H-14's problem, not this guard's.)
-export function parseThreshold(threshold: number | undefined): number {
+// The ceiling is per-caller and has no default, because the two retrieval paths score on ranges that
+// have nothing to do with each other and a shared contract is wrong for one of them whichever way it
+// is written. `scoreChunk` returns a coverage ratio in [0,1], so a threshold above 1 there refuses
+// every query. `postgres-retrieval.ts` compares the same option against raw `ts_rank_cd`
+// (unnormalized, not bounded by 1) and `1 - (embedding <=> …)` (a cosine distance in [0,2], so
+// [-1,1]), where a cutoff above 1 can be legitimate. That the two share one option at all is H-14.
+//
+// A previous version of this guard dropped the upper bound entirely, arguing that a too-high
+// threshold "fails loudly, which is self-evident within one query". That was wrong, and wrong in this
+// repo's signature way — a claim about a failure's observability, asserted rather than checked. A
+// deployment at 1.5 refuses EVERY question, and each refusal is byte-identical to a legitimate one:
+// "no evidence in the corpus" is this product's normal, correct output. Nothing surfaces. Both ends
+// of the range are silent; that is the whole reason this function exists.
+export function parseThreshold(threshold: number | undefined, scoreCeiling: number): number {
   if (threshold === undefined) {
     return defaultThreshold;
   }
-  if (!Number.isFinite(threshold) || threshold <= 0) {
-    throw new Error("out_of_corpus_threshold must be a finite number greater than 0");
+  if (!Number.isFinite(threshold) || threshold <= 0 || threshold > scoreCeiling) {
+    throw new Error(
+      `out_of_corpus_threshold must be a finite number greater than 0 and at most ${String(scoreCeiling)}`,
+    );
   }
   return threshold;
 }

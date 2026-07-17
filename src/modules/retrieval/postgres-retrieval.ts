@@ -36,6 +36,14 @@ type RetrievedChunkRow = {
 };
 
 const candidateLimit = 50;
+// This path's scores are NOT the in-memory scorer's [0,1] coverage ratio, so it must not borrow that
+// ceiling: `bm25CandidatesFor` selects raw `ts_rank_cd(...)` with no normalization flag, which is not
+// bounded by 1, and `denseCandidates` selects `1 - (embedding <=> …)`, a pgvector cosine DISTANCE in
+// [0,2] mapped to [-1,1]. A stricter cutoff above 1 can therefore be meaningful here.
+// `Infinity` is honest about what is known rather than a considered bound: nobody has measured what
+// these two rankers actually produce, which is precisely why the shared `0.3` default is unverified
+// on this path. Do not read this as "any threshold is fine" — read it as H-14, open.
+const postgresScoreCeiling = Number.POSITIVE_INFINITY;
 
 export async function retrievePostgresChunks(
   pool: Pool,
@@ -44,7 +52,7 @@ export async function retrievePostgresChunks(
   embeddingProvider: EmbeddingProvider = requireConfiguredEmbeddingProvider(),
 ): Promise<RetrievalTrace> {
   const topK = parseTopK(options.topK);
-  const threshold = parseThreshold(options.outOfCorpusThreshold);
+  const threshold = parseThreshold(options.outOfCorpusThreshold, postgresScoreCeiling);
   const [vectorCandidates, bm25Candidates] = await Promise.all([
     denseCandidates(pool, query, options.activeSnapshotId, embeddingProvider),
     bm25CandidatesFor(pool, query, options.activeSnapshotId),
