@@ -9,7 +9,11 @@ import { sha256Hex } from "../lib/hash.js";
 import type { Clock } from "../lib/time.js";
 import { systemClock } from "../lib/time.js";
 import { AuditLedger, type LedgerVerification } from "../modules/audit/ledger.js";
-import { loadFixtureCorpus, pinnedEvalTuple } from "../modules/eval/eval.js";
+import {
+  computeFixtureCorpusSnapshotHash,
+  loadFixtureCorpus,
+  pinnedEvalTuple,
+} from "../modules/eval/eval.js";
 import { EvidenceExtractProvider } from "../modules/generation/extractive.js";
 import { defaultPromptTemplate, generateAnswer } from "../modules/generation/generation.js";
 import {
@@ -20,7 +24,6 @@ import {
 import { retrieveChunks } from "../modules/retrieval/retrieval.js";
 
 const demoSnapshotId = pinnedEvalTuple.corpusSnapshotId;
-const demoSnapshotHash = sha256Hex(demoSnapshotId);
 export const demoMaxQueryLength = 300;
 const demoTopK = 4;
 
@@ -182,7 +185,7 @@ function ask(
     query,
     trace,
     corpusSnapshotId: demoSnapshotId,
-    corpusSnapshotHash: demoSnapshotHash,
+    corpusSnapshotHash: computeFixtureCorpusSnapshotHash(chunks),
     provider,
     promptTemplate: defaultPromptTemplate,
     embeddingProfile: demoEmbeddingProfile,
