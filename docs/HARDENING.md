@@ -79,8 +79,14 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   the third life of the same false claim: it shipped as "the margin widens as the corpus grows", was
   retracted on 2026-07-16 when an audit disproved it, and survived here in the criterion of the very
   item that retracted it. It is false: over the sweep the margin runs `0.2195 → 0.2048 → 0.1969 →
-  0.2140`, so it shrinks over the first three points and ends below where it started. The margin has
-  no trend — it dips and recovers — and a floor is the property the sweep asserts.
+  0.2140 → 0.2306`, so it shrinks over the first three points, which is all the claim needs to be
+  wrong. The margin has no trend — it dips and recovers — and a floor is the property the sweep
+  asserts.
+  (This sentence read "and ends below where it started" until 2026-07-17, which was true of the
+  four-point sweep it was written against and became false the moment the 2008-chunk point was added
+  and the series ended at `0.2306`. A number in prose goes stale the instant the measurement behind
+  it moves, and this one went stale inside the item whose whole subject is that failure. Hence
+  ISC-18: a documented measurement gets a test that reruns it, or it does not get documented.)
   (The first draft of this correction said the margin shrinks "while the refusal itself gets stronger
   at every size", which contradicts the very figures beside it: a shrinking margin *is* a weakening
   refusal. That clause is true of the H-15 re-cut — comparing the 8-chunk corpus against the 14-chunk
@@ -192,24 +198,34 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   paragraph said "identical". It had no citation filter at all (`finalChunks` was
   `mergedCandidates.slice(0, topK)`), so a bad threshold there broke only the refusal flag; the
   citations were never dropped, because they were never filtered.
-  **Closed on the Postgres path too, 2026-07-17, and the measurement is the point.** The first draft
-  of this fix declined to copy the filter across, reasoning that "nothing in CI exercises that path,
-  and an unverified filter would be a guess wearing a fix's clothes". **That reason was false, and
-  false in this repo's signature way — a property asserted instead of probed, written into the very
-  commit that retracts the habit.** `.github/workflows/ci.yml` provisions `pgvector/pgvector:pg16`
-  and runs `pnpm check:full` → `pnpm test:integration`, and
-  `acceptance.postgres-ingest.integration.test.ts` calls `retrievePostgresChunks` three times. The
-  path was never unreachable; it spins up its own container and runs in 12 seconds. Autoreview caught
-  the claim; a `grep` and one test run settled it.
-  Measured against that live pgvector, BEFORE the fix: the out-of-corpus probe returned
-  `outOfCorpus: true` **together with 8 chunks**, every one of them under the bar (dense scores
-  `-0.026972`..`0.014098`). `refusedOutcome` copies `finalChunks` into the response and into the
-  SIGNED LEDGER, and the operator UI renders them — so the served path refused a question and shipped
-  eight pieces of evidence for the refusal. On an answered query the same probe found 57 of 58 merged
-  candidates sitting at `0.259`–`0.295`, just under the bar, five of which were being returned as
-  citations. The integration test now asserts that a refusal cites nothing and that no citation is
-  below the bar; mutation-falsified by removing the filter, each assertion proven to fire on its own
-  (`a refusal must cite nothing: expected [ … ] to have a length of +0 but got 8`).
+  **Half-closed on the Postgres path, 2026-07-17, and the split is the finding.**
+  First, the premise had to go. The initial fix declined to touch this path at all, reasoning that
+  "nothing in CI exercises that path, and an unverified filter would be a guess wearing a fix's
+  clothes". **That reason was false, and false in this repo's signature way — a property asserted
+  instead of probed, written into the very commit that retracts the habit.**
+  `.github/workflows/ci.yml` provisions `pgvector/pgvector:pg16` and runs `pnpm check:full` →
+  `pnpm test:integration`, and `acceptance.postgres-ingest.integration.test.ts` calls
+  `retrievePostgresChunks` three times. The path was never unreachable; it spins up its own container
+  and runs in 12 seconds. Autoreview caught the claim; a `grep` and one test run settled it.
+  **CLOSED: a refusal cites nothing.** Measured against that live pgvector, before the fix: the
+  out-of-corpus probe returned `outOfCorpus: true` **together with 8 chunks**, every one under the bar
+  (dense `-0.026972`..`0.014098`). `refusedOutcome` copies `finalChunks` into the response and into
+  the SIGNED LEDGER, and the operator UI renders them — so the served path refused a question and
+  shipped eight pieces of evidence for the refusal. "No evidence exists" and "here are eight pieces of
+  evidence" cannot both be the output, and that contradiction needs no calibrated scale to be wrong,
+  which is why it is fixed now. Mutation-falsified with the neighbouring assertions masked:
+  `a refusal must cite nothing: expected [ … ] to have a length of +0 but got 8`.
+  **OPEN: a sub-threshold chunk can still be cited on an ANSWERED query here.** The first version of
+  this fix closed that too, by copying the in-memory per-chunk filter across, and **it was wrong and
+  autoreview caught it within the hour.** `bestEvidenceScores` takes `max(dense, ts_rank_cd)`, and
+  ts_rank_cd never exceeds `0.1` against a `0.3` bar (measured, see H-14), so on this path that filter
+  does not select evidence — **it deletes the lexical ranker.** An exact legal-text match with
+  mediocre dense similarity gets dropped from the citations even when RRF ranks it first, and the
+  answer generates from weaker dense evidence instead. On the fixture that filter took an answered
+  trace from 6 citations to 1 and I read the drop as the fix working; it was the bug. Applying a bar
+  calibrated for another scale is H-14 wearing a fix's clothes, and it is a worse defect than the one
+  it closes. Reverted. The per-chunk half waits on H-14: normalize the rankers, or give each its own
+  criterion, then filter.
   H-14 stays open and is now MEASURED rather than read off the code — see below.
   Found by the third cross-vendor audit (gpt-5.5, 2026-07-16). `0.3` was applied at the QUERY level —
   "is there any evidence?" — while `finalChunks` returned `topK` regardless of each chunk's own score.
@@ -305,9 +321,11 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
     `[0,2]`, so this lands in `[-1,1]` and can be NEGATIVE, and its baseline between unrelated German
     sentences is high) and `ts_rank_cd(...)` (unbounded, typically an order of magnitude smaller).
     `bestEvidenceScore` takes the `max` of the two seeded at 0, so the larger-scaled dense score
-    decides the gate, and a negative dense score is hidden from the gate. (It is no longer eligible
-    for `finalChunks`: the evidence filter landed on this path 2026-07-17 and drops it. See H-15.)
-    Three scales, one constant.
+    decides the gate and a negative dense score is hidden from it. Three scales, one constant.
+    **This is why the citation filter cannot simply be copied from the other path**, which was tried
+    on 2026-07-17 and reverted the same hour: `max(dense, ts_rank_cd)` against `0.3` cannot be
+    cleared by a lexical score that tops out at `0.1`, so the filter deletes the lexical ranker rather
+    than selecting evidence. Closing that half of H-15 here requires closing this item first.
   - `plainto_tsquery('simple', ...)` applies no stemming and no stopword removal, so the lexical
     half carries the same German-stopword exposure H-10 just fixed on the other path.
   - The only refusal probe is still `"zzzz yyyyy xxxx"`

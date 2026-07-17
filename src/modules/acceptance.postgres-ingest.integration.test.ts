@@ -186,57 +186,47 @@ async function runRetrievalAssertions(pool: Pool, dir: string): Promise<void> {
     pageStart: 1,
     charStart: 0,
   });
-  // This asserted 6 — `topK` — until 2026-07-17, when the evidence filter landed on this path and it
-  // became 1. The drop is the finding, not a regression: of the 58 merged candidates for this query
-  // exactly one is evidence (`0.691897`); the other 57 sit at `0.259`–`0.295`, just UNDER the bar,
-  // and five of them were being returned as citations because `topK` was the only thing bounding the
-  // result. `topK` still bounds from above — it just is not what binds here.
-  //
-  // Worth reading off those numbers: the dense baseline between unrelated content is ~`0.26` and the
-  // bar is `0.3`, so on this path the refusal is decided by `0.04` of headroom over the noise floor.
-  // That is H-14, and it is why the bar's value on this path is luck rather than calibration.
-  expect(currentTrace.finalChunks).toHaveLength(1);
-  expect(currentTrace.finalChunks.length).toBeLessThanOrEqual(6);
+  // Still `topK`, and deliberately so. A per-chunk evidence filter briefly landed here on 2026-07-17
+  // and took this to 1, which looked like the H-15 fix working: of the 58 merged candidates exactly
+  // one clears `0.3` (`0.691897`), the other 57 sit at `0.259`–`0.295`. But on this path that filter
+  // reads `max(dense, ts_rank_cd)`, and ts_rank_cd never exceeds `0.1`, so it cannot select evidence
+  // — it deletes the lexical ranker, dropping an exact legal-text match with mediocre dense
+  // similarity even when RRF ranks it first. It was reverted. See H-14: the bar is calibrated for a
+  // scale this path does not use, and the dense baseline between unrelated content (~`0.26`) sits
+  // `0.04` under it, so its placement here is luck, not calibration.
+  expect(currentTrace.finalChunks).toHaveLength(6);
   expect(
     currentTrace.finalChunks.every((chunk) => chunk.corpusSnapshotId === secondSnapshotId),
   ).toBe(true);
   expect(refused.outOfCorpus).toBe(true);
-  assertNoSubThresholdCitation(trace, currentTrace, refused);
+  assertRefusalCitesNothing(trace, refused);
 }
 
-// H-15 on the served path, split out because it is its own property and the assertions above are
-// about snapshot binding and topK.
+// H-15 on the served path, the half of it that is provable on any score scale: if the system says no
+// evidence exists, it must not hand back evidence.
 //
 // `refused.outOfCorpus` alone passed for months while `finalChunks` still held 8 chunks — and
 // `refusedOutcome` copies those into the response and into the SIGNED LEDGER, and the operator UI
 // renders them, so the system refused a question and shipped eight pieces of "evidence" for the
-// refusal. Measured against this same pgvector container before the filter landed: those 8 chunks
-// scored -0.026972..0.014098, every one far under the bar. Asserting the flag without asserting the
-// payload is exactly what let it stand.
+// refusal. Measured against this same pgvector container before the fix: those 8 chunks scored
+// -0.026972..0.014098, every one far under the bar. Asserting the flag without asserting the payload
+// is exactly what let it stand.
 //
-// Mutation-falsified 2026-07-17 by removing the filter from `postgres-retrieval.ts`, with the
-// snapshot/topK assertions masked so this function had to catch it alone. It does:
+// The OTHER half of H-15 — no sub-threshold chunk cited on an ANSWERED query — is not asserted here,
+// and its absence is deliberate rather than an oversight. It holds on the in-memory path, where the
+// bar and the scores are the same scale. Here they are not (H-14: ts_rank_cd tops out at 0.1 against
+// a 0.3 bar), so asserting it would pin the very behaviour that made the first fix wrong: dropping
+// every lexical-only match from the citations. That assertion belongs here the day H-14 closes.
+//
+// Mutation-falsified 2026-07-17 by removing the refusal-emptying from `postgres-retrieval.ts`, with
+// the snapshot/topK assertions masked so this function had to catch it alone. It does:
 // `a refusal must cite nothing: expected [ … ] to have a length of +0 but got 8`.
-function assertNoSubThresholdCitation(
-  ...traces: readonly [RetrievalTrace, RetrievalTrace, RetrievalTrace]
-): void {
-  const [answered, current, refused] = traces;
+function assertRefusalCitesNothing(...traces: readonly [RetrievalTrace, RetrievalTrace]): void {
+  const [answered, refused] = traces;
   expect(refused.finalChunks, "a refusal must cite nothing").toHaveLength(0);
-  // The counterweight: a filter that dropped everything would satisfy the line above on every query.
+  // The counterweight: emptying `finalChunks` unconditionally would satisfy the line above.
   expect(answered.finalChunks.length, "an answered query must still cite").toBeGreaterThan(0);
-  for (const trace of [answered, current]) {
-    for (const cited of trace.finalChunks) {
-      // Re-derive the cited chunk's own evidence score the way the gate does, from the ranker passes
-      // rather than the post-fusion RRF value sitting in `retrievalScore`.
-      const own = Math.max(
-        0,
-        ...[...trace.vectorCandidates, ...trace.bm25Candidates]
-          .filter((candidate) => candidate.chunkId === cited.chunkId)
-          .map((candidate) => candidate.retrievalScore),
-      );
-      expect(own, `cited ${cited.chunkId} below the evidence bar`).toBeGreaterThanOrEqual(0.3);
-    }
-  }
+  expect(answered.outOfCorpus, "…and must not be refused in the first place").toBe(false);
 }
 
 async function postgresDatabase(): Promise<DatabaseHandle> {
