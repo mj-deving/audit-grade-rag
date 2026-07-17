@@ -346,19 +346,38 @@ describe("refusal under corpus growth", () => {
     // The re-measurement vindicates the old figure — 0.282525 rounds to the documented 0.283 — which
     // is the useful part: the claim was true and still owned by nothing. An unowned number is not
     // wrong, it is unguarded, and this one guarded the single documented limit of the refusal.
+    // The whole SERIES, at the sizes the docs quote, because the first version of this test measured
+    // only the 2000 endpoint while the docs quoted six figures across three sizes — the identical
+    // defect this test was written to fix, committed inside the fix. A cross-vendor review caught it
+    // the same hour: "a scoring change could flatten or reverse the intermediate trend while this
+    // test remains green".
     const base = await corpus();
-    const eroded = bestScore(outOfCorpusQuestion, grownWith(base, 2000, alienChunks));
-    expect(eroded, "alien growth must still leave the question refused").toBeLessThan(threshold);
-    // A CEILING, which is the direction that hurts: if a change makes alien growth erode faster,
-    // this fails. Deliberately not `toBeCloseTo` — the property is "stays clear of the bar", and
-    // pinning the exact value would fail on an improvement, the mistake the sweep above documents.
-    expect(eroded, "alien-growth erosion is bounded").toBeLessThan(0.29);
-    // The contrast is the actual claim, and it is about VOCABULARY, not size. At the same 2000 added
-    // chunks the two fillers go opposite ways: alien rises 0.2154 → 0.2654 → 0.2825 toward the bar
-    // as the corpus grows, German falls 0.1031 → 0.0813 → 0.0694 away from it.
-    expect(
-      bestScore(outOfCorpusQuestion, grownBy(base, 2000)),
-      "same corpus size, same-language filler: not the same problem",
-    ).toBeLessThan(eroded / 3);
+    const sizes = [50, 500, 2000] as const;
+    const alien = sizes.map((n) => bestScore(outOfCorpusQuestion, grownWith(base, n, alienChunks)));
+    const german = sizes.map((n) => bestScore(outOfCorpusQuestion, grownBy(base, n)));
+
+    // Documented as `0.2154 → 0.2654 → 0.2825` and `0.1031 → 0.0813 → 0.0694`.
+    expect(alien.map((score) => Number(score.toFixed(4)))).toEqual([0.2154, 0.2654, 0.2825]);
+    expect(german.map((score) => Number(score.toFixed(4)))).toEqual([0.1031, 0.0813, 0.0694]);
+
+    // The DIRECTION is the claim, and it is about vocabulary rather than size: at every step the
+    // alien corpus pushes the unevidenced question toward the bar while the German one pushes it
+    // away. Asserted stepwise, not endpoint-to-endpoint, so a flattened or reversed middle fails.
+    for (const [index, score] of alien.entries()) {
+      if (index > 0) {
+        expect(score, `alien growth must rise at step ${String(index)}`).toBeGreaterThan(
+          alien[index - 1] ?? 0,
+        );
+        expect(german[index] ?? 0, `German growth must fall at step ${String(index)}`).toBeLessThan(
+          german[index - 1] ?? 0,
+        );
+      }
+      expect(score, `alien growth must stay refused at step ${String(index)}`).toBeLessThan(
+        threshold,
+      );
+    }
+    // The bound that matters: erosion may not reach the bar. Kept as a ceiling rather than a pin so
+    // an improvement does not fail it — that mistake is what the sweep above this one documents.
+    expect(alien.at(-1) ?? 0, "alien-growth erosion is bounded").toBeLessThan(0.29);
   });
 });
