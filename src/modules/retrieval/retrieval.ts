@@ -84,9 +84,10 @@ export function retrieveChunks(
 //
 // Deliberately NOT exported. It was, briefly, so `postgres-retrieval.ts` could filter citations on
 // the same definition — which sounds like consistency and is the opposite: that path's two rankers
-// score on ranges this bar was never calibrated for, and `max(dense, ts_rank_cd)` there just deletes
-// the lexical ranker (ts_rank_cd tops out at 0.1 against a 0.3 bar). Sharing the FUNCTION would have
-// hidden that the two paths do not share the SCALE. See H-14.
+// score on ranges this bar was never calibrated for, so `max(dense, ts_rank_cd)` compared against
+// `0.3` there sorts chunks by an arithmetic accident (0.3 of `ts_rank_cd` means "repeats a term three
+// times"; 0.3 here means 30% IDF-weighted coverage). Sharing the FUNCTION would have hidden that the
+// two paths do not share the SCALE. See H-14.
 function bestEvidenceScores(
   vectorCandidates: readonly RetrievedChunk[],
   bm25Candidates: readonly RetrievedChunk[],
