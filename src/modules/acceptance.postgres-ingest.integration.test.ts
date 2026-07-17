@@ -244,9 +244,11 @@ function assertH14ScaleMismatch(probes: {
   // which is the H-10 defect this repo already retracted once.
   //
   // So the assertion says what it can: on this fixture the lexical half does not reach the bar, which
-  // is why the served gate is dense-decided HERE. Real German legal prose repeating "Auditpflicht"
-  // three times would clear 0.3 on word count alone — that is H-14, and it is why the bar is
-  // meaningless on this path rather than merely miscalibrated.
+  // is why the served gate is dense-decided HERE. It is not dense-decided in general — against a
+  // single-term query a chunk repeating that term three times clears 0.3 on frequency alone, while a
+  // multi-term query scores 0 if any one term is absent however often the others repeat. Neither
+  // behaviour is a coverage ratio, which is H-14: the bar is meaningless on this path rather than
+  // merely miscalibrated.
   expect(Math.max(...lexical), "this fixture's lexical scores stay under the bar").toBeLessThan(
     0.3,
   );

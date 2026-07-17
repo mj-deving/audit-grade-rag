@@ -227,8 +227,10 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   Reverted.
   **The reason first given for reverting was itself false**, and a cross-vendor audit refuted it a
   day later: "ts_rank_cd never exceeds `0.1`, so the filter necessarily deletes the lexical ranker."
-  It does not necessarily do anything of the kind — `ts_rank_cd` reaches `0.3` at three occurrences
-  of a query term and keeps climbing (see H-14). The `0.1` was the fixture's, not the ranker's.
+  It does not necessarily do anything of the kind — against a SINGLE-term query, `ts_rank_cd` reaches
+  `0.3` at three occurrences and keeps climbing (see H-14 for the probe table, including the
+  multi-term case where it stays at `0` however often the matched term repeats). The `0.1` was the
+  fixture's, not the ranker's.
   The real reason is worse for the bar rather than better: `max(dense, ts_rank_cd)` compares two
   incommensurable scales against a number calibrated for a third. A lexical `0.3` is a cover-density
   rank that is `0` whenever any query term is missing and unbounded once they are all present; a
