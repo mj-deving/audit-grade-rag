@@ -135,10 +135,16 @@ disclose": Article 50 misstated, on the single case built to test duty-versus-ex
 
 The cause was the chunking. Article 50 states a duty and narrows it with a clause that names its
 subject anaphorically, and four of the five exception chunks opened with the identical string "Diese
-Pflicht gilt nicht". None named the duty it limited. So an exception was unreachable from its own
-duty's question — it shared exactly one token with it, the stopword "wenn" — and the five exceptions
-were indistinguishable from each other, all scoring `0.61`–`0.92` on the `contradictory` question by
-matching each other's vocabulary. The corpus is now cut along the Absätze, 8 chunks instead of 14,
+Pflicht gilt nicht", the fifth with "Ist der Inhalt". None named the duty it limited. So an exception
+was unreachable from its own duty's question — it shared exactly one token with it, the stopword
+"wenn" — and the exceptions matched on each other's counter-clause vocabulary instead of on the duty
+they limit. Measured on the `contradictory` question: the right exception ranked first at `0.9158`,
+three unrelated exception chunks followed at `0.8152`, `0.7661` and `0.6623`, and `art50-deepfake` —
+a duty, not an exception — landed among them at `0.6075`. All five cleared the `0.3` bar and would be
+cited; four are wrong. The fifth exception, `art50-deepfake-artistic`, scored `0.0` and was invisible.
+So the exceptions were not indistinguishable from each other, they were unanchored from their duties,
+which is also why the one that shared no counter-clause vocabulary vanished entirely rather than
+joining the pile. The corpus is now cut along the Absätze, 8 chunks instead of 14,
 each duty carrying the exception that limits it. `art50-deepfake` already did this inline and was the
 precedent. The provenance tests were not touched and still pass: the re-cut is verbatim and still
 accounts for the whole source in order.

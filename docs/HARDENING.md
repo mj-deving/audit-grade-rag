@@ -147,41 +147,54 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   whether evidence exists at all.
   Falsifier: an answered question cites a chunk whose own score would have been refused as
   out-of-corpus had it been the best candidate.
-  Closed 2026-07-16 **on the in-memory fixture path only** (the served Postgres path is H-14 and is
-  untouched). `retrieveChunks` now filters `finalChunks` to the same threshold the gate uses, and a
-  refusal returns no chunks at all. Probes: `retrieval.unit.test.ts` › "a citation clears the same bar
-  as the gate" (5 tests) and › "a duty is never retrievable without its exception" (3 tests). All were
-  mutation-falsified: removing the filter reproduces the original defect
-  (`cited art50-first-contact-accessibility below the evidence bar: expected 0.218509 to be >= 0.3`).
+  Closed 2026-07-16 **on the in-memory fixture path only** (the served Postgres path is H-14/H-15
+  Postgres and is untouched). `retrieveChunks` filters `finalChunks` to the same threshold the gate
+  uses, and a refusal returns no chunks at all. Probe: `retrieval.unit.test.ts` › "a citation clears
+  the same bar as the gate" (3 tests). Mutation-falsified 2026-07-17 by deleting the filter: **2 of
+  the 3 go red** (`cited art50-first-contact-accessibility below the evidence bar: expected 0.218509
+  to be >= 0.3`, and "cites nothing at all when it refuses"). The third, "filters on the evidence
+  score, not the fused rank score", stays GREEN under that mutation and is not a guard for this item —
+  it pins the RRF-scale trap, a different defect. The neighbouring describe › "a duty is never
+  retrievable without its exception" (3 tests) also stays green here; it guards the corpus cut.
+  (This paragraph read "(5 tests) … All were mutation-falsified" until the fifth cross-vendor audit
+  counted them. Both halves were false: the describe had 3 tests, and 1 of them survives the mutation.
+  A test count in prose is owned by nothing, exactly like the numbers in H-10.)
   **`pnpm eval` does not verify this item and never did** — `scoreCitationAccuracy` is recall-only, so
   deleting the filter still leaves it `passed: true` at `citation-accuracy: 1` (measured 2026-07-17).
   The unit tests are the whole guard.
-  Extended 2026-07-17: the threshold is now validated at the entry to both retrieval paths
-  (`parseThreshold`, mirroring `parseTopK`). Two values disabled the bar without failing. `NaN`,
-  because every comparison against it is false: nothing was refused AND every citation was dropped,
-  producing an answer asserted from zero cited chunks. And `0`, because scores are non-negative and
-  `bestEvidenceScore` is `Math.max(0, …)`: nothing is refused and the filter is a no-op. Measured at
-  `0`, the out-of-corpus banking question is answered citing 8 chunks of the AI Act — H-10's defect,
-  reachable by config alone. A third: any threshold above the path's own score ceiling, which refuses
-  every question, and since a refusal is this product's normal correct output for an unevidenced
-  question, every one of those looks legitimate and nothing surfaces. The ceiling is therefore
-  per-caller and has no default — `1` for `retrieveChunks`, whose scores are a [0,1] coverage ratio;
-  unbounded for the Postgres path, whose ranks are not (see below).
-  Provenance of the three, because it is the point: `NaN` was found by the fourth cross-vendor audit
-  (gpt-5.6-sol, 2026-07-17). `0` was found by autoreview **on that fix**, which had permitted it
-  deliberately — the first guard against silently disabling the bar shipped with the plainest way to
-  silently disable the bar still in it. The ceiling was found by autoreview **on that fix**, which had
-  dropped the upper bound on the reasoning that a too-high threshold "fails loudly". It does not fail
-  loudly; it fails invisibly. Each fix in this chain was written carefully and each reintroduced the
-  same class of error one layer up, so the guard is now three-sided and every side is a probe.
+  **The threshold stopped being configurable 2026-07-17, and that is the actual fix.** It had been an
+  option, `outOfCorpusThreshold`, and three commits went into guarding it against values that
+  disabled the bar without failing: `NaN` (every comparison false, so nothing refuses AND every
+  citation drops), `0` (scores are non-negative and `bestEvidenceScore` is `Math.max(0, …)`, so
+  `best < 0` never refuses and `score >= 0` filters nothing — measured, the out-of-corpus banking
+  question answered citing 8 chunks of the AI Act, H-10's defect reachable by config alone),
+  `1e-300` and `Number.MIN_VALUE` (the same no-op wearing a positive sign, which the interval guard
+  accepted), and any value above the score ceiling (refuses EVERY question, indistinguishably from a
+  legitimate refusal, because "no evidence in the corpus" is this product's normal correct output).
+  Provenance, because it is the point: `NaN` came from the fourth cross-vendor audit (gpt-5.6-sol).
+  `0` came from autoreview **on that fix**, which had permitted it deliberately. The ceiling came from
+  autoreview **on that fix**, which had dropped the upper bound reasoning that a too-high threshold
+  "fails loudly" — it does not fail loudly, it fails invisibly. The subnormals came from the fifth
+  cross-vendor audit (gpt-5.6-sol, 2026-07-17) **on that fix**, which had called the guard
+  "three-sided and every side a probe". Each fix was written carefully; each reintroduced the same
+  class of error one layer up; a fourth guard would have closed the fourth value and missed the fifth.
+  What ended it was not a better interval. **Nothing ever passed the option** — not `runtime-app.ts`,
+  not `demo-app.ts`, not the eval harness, not a config file, not an env var. Every one of those
+  failures was reachable only through a knob with no caller, so the knob is gone and its whole failure
+  class with it. `evidenceThreshold` is now one exported constant. The lesson is not about validation:
+  three careful commits went into hardening a hole that existed because the option existed, and the
+  option's own callers had been saying so the entire time.
   **The Postgres path had a related hole, not the identical one**, and the first version of this
   paragraph said "identical". It has no citation filter at all (`finalChunks` is
   `mergedCandidates.slice(0, topK)`), so a bad threshold there broke only the refusal flag; the
-  citations were never dropped, because they were never filtered. Both paths are guarded now, but the
-  failures they had were different, and the shared threshold remains meaningless on the Postgres side
-  regardless: it is compared against raw `ts_rank_cd` (unnormalized, not bounded by 1) and against
-  `1 - (embedding <=> …)` (a cosine distance in [0,2], so [-1,1]), neither of which is the in-memory
-  scorer's [0,1] coverage ratio. That is H-14.
+  citations were never dropped, because they were never filtered. That asymmetry survives the
+  deletion: **H-15 is still closed on the in-memory path only**, and the Postgres path can still
+  refuse a query and return chunks in the same trace. The filter is deliberately not copied across —
+  nothing in CI exercises that path, and an unverified filter against the scale mismatch below would
+  be a guess wearing a fix's clothes. Tracked with H-14, which the shared constant now makes visible
+  rather than hiding behind a knob: `0.3` is calibrated for the in-memory [0,1] coverage ratio, and
+  is compared on the Postgres side against raw `ts_rank_cd` (unnormalized, not bounded by 1) and
+  against `1 - (embedding <=> …)` (a cosine distance in [0,2], so [-1,1], and it CAN go negative).
   Found by the third cross-vendor audit (gpt-5.5, 2026-07-16). `0.3` was applied at the QUERY level —
   "is there any evidence?" — while `finalChunks` returned `topK` regardless of each chunk's own score.
   So a chunk at `0.265` was simultaneously not-evidence (if best) and evidence (as a citation).
@@ -247,14 +260,20 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   it answer.
   Read from the code, not measured — no Postgres and no `BGE_M3_EMBEDDING_ENDPOINT` are reachable
   here, so the behaviour below is UNVERIFIED and the item stays open on that ground alone:
-  - `src/modules/retrieval/postgres-retrieval.ts` redeclares `defaultThreshold = 0.3` (line 38) and
-    never calls the `retrieveChunks` that H-10 fixed. `/demo` is hardened; the API routes in
-    `runtime-app.ts` are not. Both are served by `src/commands/server.ts`.
+  - `src/modules/retrieval/postgres-retrieval.ts` never calls the `retrieveChunks` that H-10 fixed:
+    it runs its own SQL rankers and only shares the fusion and the bar. `/demo` is hardened; the API
+    routes in `runtime-app.ts` are not. Both are served by `src/commands/server.ts`. (This bullet
+    read "redeclares `defaultThreshold = 0.3` (line 38)" until 2026-07-17. That duplicate constant is
+    gone — both paths now read the one exported `evidenceThreshold` — but the item is unchanged by
+    that: sharing the constant does not make it mean the same thing on both sides, which is precisely
+    what this item is.)
   - The constant `0.3` was calibrated for an IDF-weighted coverage ratio in `[0,1]`. It is applied
-    to two other scales: `1 - (embedding <=> $2::vector)` (cosine similarity, whose baseline between
-    unrelated German sentences is high) and `ts_rank_cd(...)` (unbounded, typically an order of
-    magnitude smaller). `bestEvidenceScore` takes the `max` of the two, so the larger-scaled dense
-    score decides the gate. Three scales, one constant.
+    to two other scales: `1 - (embedding <=> $2::vector)` (pgvector's `<=>` is a cosine DISTANCE in
+    `[0,2]`, so this lands in `[-1,1]` and can be NEGATIVE, and its baseline between unrelated German
+    sentences is high) and `ts_rank_cd(...)` (unbounded, typically an order of magnitude smaller).
+    `bestEvidenceScore` takes the `max` of the two seeded at 0, so the larger-scaled dense score
+    decides the gate, and a negative dense score is hidden from the gate while staying eligible for
+    fusion and for `finalChunks`. Three scales, one constant.
   - `plainto_tsquery('simple', ...)` applies no stemming and no stopword removal, so the lexical
     half carries the same German-stopword exposure H-10 just fixed on the other path.
   - The only probe is `"zzzz yyyyy xxxx"` (`acceptance.postgres-ingest.integration.test.ts:172`) —

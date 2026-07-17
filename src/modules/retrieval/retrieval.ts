@@ -4,7 +4,6 @@ import { foldGerman } from "../../lib/german.js";
 export type RetrievalOptions = {
   readonly topK?: number;
   readonly activeSnapshotId: string;
-  readonly outOfCorpusThreshold?: number;
 };
 
 export type RetrievalTrace = {
@@ -17,12 +16,28 @@ export type RetrievalTrace = {
 
 const candidateLimit = 50;
 const defaultTopK = 8;
-const defaultThreshold = 0.3;
 const rrfK = 60;
-// `scoreChunk` returns `roundScore(Math.min(1, base + lengthBonus))` over a non-negative `base`, so
-// every score this path produces is in [0,1]. Deliberately NOT exported: `postgres-retrieval.ts`
-// ranks on a different scale and declares its own ceiling.
-const inMemoryScoreCeiling = 1;
+
+// The bar that decides both whether evidence exists and which chunks may be cited. One calibrated
+// constant, deliberately not configurable.
+//
+// It used to be an option, `outOfCorpusThreshold`, and nothing ever passed it: not the runtime app,
+// not the demo, not the eval harness, not a config file, not an env var. It existed only for the
+// tests that guarded it. Three commits went into narrowing that guard, each one closing a value that
+// silently disabled the bar and each one leaving another: `NaN` (every comparison false, so nothing
+// refuses and every citation drops), `0` (scores are non-negative, so `best < 0` never refuses and
+// `score >= 0` filters nothing), `1e-300` (the same no-op, wearing a positive sign), any value above
+// the score ceiling (refuses EVERY question, and each refusal is byte-identical to a legitimate one
+// because "no evidence in the corpus" is this product's normal, correct output).
+//
+// The interval was the wrong fix. Every one of those failures was reachable only through an option
+// with no caller, so the option is gone and the failure class with it. A future caller that genuinely
+// needs to tune this adds a validated surface at that point, against the range it actually measures.
+//
+// The value: `scoreChunk` returns an IDF-weighted coverage ratio in [0,1], and 0.3 is calibrated on
+// the golden set — four answerable cases clear it with a worst-case margin of 0.031 (H-11 tracks that
+// narrowness), and the out-of-corpus case sits under it at every corpus size in the sweep.
+export const evidenceThreshold = 0.3;
 
 export function retrieveChunks(
   query: string,
@@ -40,7 +55,6 @@ export function retrieveChunks(
   );
   const bm25Candidates = rankCandidates(query, activeChunks, "bm25", idf).slice(0, candidateLimit);
   const mergedCandidates = reciprocalRankFusion(vectorCandidates, bm25Candidates);
-  const threshold = parseThreshold(options.outOfCorpusThreshold, inMemoryScoreCeiling);
   const evidenceScores = bestEvidenceScores(vectorCandidates, bm25Candidates);
   const bestEvidenceScore = Math.max(0, ...evidenceScores.values());
   // A cited chunk clears the same bar that decides whether evidence exists at all. `0.3` used to be a
@@ -53,14 +67,14 @@ export function retrieveChunks(
   // fusion rescales to ~0.016-0.032, so comparing that against 0.3 would drop every chunk on every
   // query and refuse the whole corpus.
   const finalChunks = mergedCandidates
-    .filter((chunk) => (evidenceScores.get(chunk.chunkId) ?? 0) >= threshold)
+    .filter((chunk) => (evidenceScores.get(chunk.chunkId) ?? 0) >= evidenceThreshold)
     .slice(0, topK);
   return {
     vectorCandidates,
     bm25Candidates,
     mergedCandidates,
     finalChunks,
-    outOfCorpus: bestEvidenceScore < threshold,
+    outOfCorpus: bestEvidenceScore < evidenceThreshold,
   };
 }
 
@@ -76,45 +90,6 @@ function bestEvidenceScores(
     scores.set(chunk.chunkId, Math.max(scores.get(chunk.chunkId) ?? 0, chunk.retrievalScore));
   }
   return scores;
-}
-
-// The threshold decides both whether evidence exists and which chunks may be cited, so the values
-// worth rejecting are the ones that turn both off WITHOUT failing. Two of them:
-//
-//   NaN — every comparison against it is false, so `best < NaN` never refuses and `score >= NaN`
-//   drops every citation. The result answers from zero cited chunks.
-//   0 — `bestEvidenceScore` is `Math.max(0, …)` and scores are non-negative, so `best < 0` is never
-//   true and `score >= 0` is always true. The gate never refuses and the filter is a no-op.
-//   Measured: at `0` the out-of-corpus banking question is answered, citing 8 chunks of the AI Act.
-//
-// Rejecting only non-finite values would have left `0` — the plainest way to silently disable the
-// property this function exists to protect. The first version of this guard did exactly that, and
-// permitted `0` on purpose, reasoning it was a coherent "gate off" setting. A gate that is off is
-// the defect, not a configuration.
-//
-// The ceiling is per-caller and has no default, because the two retrieval paths score on ranges that
-// have nothing to do with each other and a shared contract is wrong for one of them whichever way it
-// is written. `scoreChunk` returns a coverage ratio in [0,1], so a threshold above 1 there refuses
-// every query. `postgres-retrieval.ts` compares the same option against raw `ts_rank_cd`
-// (unnormalized, not bounded by 1) and `1 - (embedding <=> …)` (a cosine distance in [0,2], so
-// [-1,1]), where a cutoff above 1 can be legitimate. That the two share one option at all is H-14.
-//
-// A previous version of this guard dropped the upper bound entirely, arguing that a too-high
-// threshold "fails loudly, which is self-evident within one query". That was wrong, and wrong in this
-// repo's signature way — a claim about a failure's observability, asserted rather than checked. A
-// deployment at 1.5 refuses EVERY question, and each refusal is byte-identical to a legitimate one:
-// "no evidence in the corpus" is this product's normal, correct output. Nothing surfaces. Both ends
-// of the range are silent; that is the whole reason this function exists.
-export function parseThreshold(threshold: number | undefined, scoreCeiling: number): number {
-  if (threshold === undefined) {
-    return defaultThreshold;
-  }
-  if (!Number.isFinite(threshold) || threshold <= 0 || threshold > scoreCeiling) {
-    throw new Error(
-      `out_of_corpus_threshold must be a finite number greater than 0 and at most ${String(scoreCeiling)}`,
-    );
-  }
-  return threshold;
 }
 
 export function parseTopK(topK: number | undefined): number {
