@@ -162,11 +162,18 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   producing an answer asserted from zero cited chunks. And `0`, because scores are non-negative and
   `bestEvidenceScore` is `Math.max(0, …)`: nothing is refused and the filter is a no-op. Measured at
   `0`, the out-of-corpus banking question is answered citing 8 chunks of the AI Act — H-10's defect,
-  reachable by config alone. The guard rejects both; it has no upper bound, because a threshold above
-  the scorer's range fails loudly and because the Postgres ranks are not bounded by 1 (see below).
-  `NaN` was found by the fourth cross-vendor audit (gpt-5.6-sol, 2026-07-17). `0` was found by
-  autoreview on the fix itself, which had permitted it deliberately — the first guard against silently
-  disabling the bar left in the plainest way to silently disable the bar.
+  reachable by config alone. A third: any threshold above the path's own score ceiling, which refuses
+  every question, and since a refusal is this product's normal correct output for an unevidenced
+  question, every one of those looks legitimate and nothing surfaces. The ceiling is therefore
+  per-caller and has no default — `1` for `retrieveChunks`, whose scores are a [0,1] coverage ratio;
+  unbounded for the Postgres path, whose ranks are not (see below).
+  Provenance of the three, because it is the point: `NaN` was found by the fourth cross-vendor audit
+  (gpt-5.6-sol, 2026-07-17). `0` was found by autoreview **on that fix**, which had permitted it
+  deliberately — the first guard against silently disabling the bar shipped with the plainest way to
+  silently disable the bar still in it. The ceiling was found by autoreview **on that fix**, which had
+  dropped the upper bound on the reasoning that a too-high threshold "fails loudly". It does not fail
+  loudly; it fails invisibly. Each fix in this chain was written carefully and each reintroduced the
+  same class of error one layer up, so the guard is now three-sided and every side is a probe.
   **The Postgres path had a related hole, not the identical one**, and the first version of this
   paragraph said "identical". It has no citation filter at all (`finalChunks` is
   `mergedCandidates.slice(0, topK)`), so a bad threshold there broke only the refusal flag; the

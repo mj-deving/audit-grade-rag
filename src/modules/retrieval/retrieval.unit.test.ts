@@ -243,25 +243,29 @@ describe("the evidence bar cannot be silently disabled by config", () => {
     ).toBeGreaterThanOrEqual(0);
   });
 
-  it("still honours a valid explicit threshold", async () => {
-    // The guard must reject the disabling values without also rejecting the tuning the option exists
-    // for. No upper bound: a threshold above the scorer's range fails loudly (everything refused) and
-    // the Postgres caller's ranks are not bounded by 1 at all.
+  it("refuses a threshold above this path's score ceiling", async () => {
+    // The other silent end. `scoreChunk` cannot exceed 1, so a bar at 1.5 refuses every question —
+    // and a refusal is this product's normal, correct output for an unevidenced question, so every
+    // one of those looks legitimate and nothing surfaces. An earlier version of this guard allowed it
+    // on the reasoning that it "fails loudly". It does not fail loudly; it fails invisibly, which is
+    // the same failure this describe is named for.
     const chunks = await corpus();
-    const strict = retrieveChunks(coveredQuestion, chunks, {
-      ...options,
-      outOfCorpusThreshold: 1.5,
-    });
-    expect(strict.outOfCorpus, "a bar above the scorer's range refuses, loudly and obviously").toBe(
-      true,
-    );
-    expect(strict.finalChunks).toHaveLength(0);
+    expect(() =>
+      retrieveChunks(coveredQuestion, chunks, { ...options, outOfCorpusThreshold: 1.5 }),
+    ).toThrow(/at most 1/u);
+  });
+
+  it("still honours the tuning the option exists for", async () => {
+    // The counterweight: a guard that rejected everything would pass every test above.
+    const chunks = await corpus();
     const loose = retrieveChunks(coveredQuestion, chunks, {
       ...options,
       outOfCorpusThreshold: 0.01,
     });
     expect(loose.outOfCorpus, "a low-but-positive bar is tuning, not disabling").toBe(false);
     expect(loose.finalChunks.length).toBeGreaterThan(0);
+    const tight = retrieveChunks(coveredQuestion, chunks, { ...options, outOfCorpusThreshold: 1 });
+    expect(tight.outOfCorpus, "a bar exactly at the ceiling is valid, and refuses").toBe(true);
   });
 });
 
