@@ -209,8 +209,9 @@ async function runRetrievalAssertions(pool: Pool, dir: string): Promise<void> {
 
 // H-14, pinned rather than described. These four numbers are the entire argument for why the shared
 // `0.3` bar is meaningless on this path, and they are quoted in `docs/HARDENING.md` — so they get
-// assertions, not a comment. (They had a comment until 2026-07-17. Applying ISC-23's probe to my own
-// work found them: a figure appearing in a test FILE is not a figure a test COMPUTES.)
+// assertions, not a comment. (They had a comment until 2026-07-17, and the probe that found them is
+// worth stating: a figure appearing in a test FILE is not a figure a test COMPUTES. Grep cannot tell
+// the difference; only an assertion can.)
 //
 // If any of these move, H-14's write-up is out of date and this fails, which is the intended
 // coupling: the item stays open until the scales are normalized, and its evidence stays true until
@@ -241,8 +242,8 @@ function assertH14ScaleMismatch(probes: {
   // separation is real, but 0.3 sits only ~0.04 above the noise floor, and that placement is luck:
   // the bar was tuned for the in-memory scorer, which is not this.
   //
-  // Each figure at the precision the docs PUBLISH it, which is the whole of ISC-24 and cuts both
-  // ways. `HARDENING.md` quotes the peak as `0.691897`, so that is exact to 6dp: `toBeCloseTo(…, 5)`
+  // Each figure at the precision the docs PUBLISH it, and that rule cuts both ways.
+  // `HARDENING.md` quotes the peak as `0.691897`, so that is exact to 6dp: `toBeCloseTo(…, 5)`
   // would let it drift to `0.691901` and stay green, leaving the doc stale with a passing test.
   //
   // The floor it publishes only as "~`0.26`", never as `0.259852` — so pinning six digits there

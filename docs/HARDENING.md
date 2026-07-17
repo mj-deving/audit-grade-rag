@@ -85,8 +85,9 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   (This sentence read "and ends below where it started" until 2026-07-17, which was true of the
   four-point sweep it was written against and became false the moment the 2008-chunk point was added
   and the series ended at `0.2306`. A number in prose goes stale the instant the measurement behind
-  it moves, and this one went stale inside the item whose whole subject is that failure. Hence
-  ISC-18: a documented measurement gets a test that reruns it, or it does not get documented.)
+  it moves, and this one went stale inside the item whose whole subject is that failure. Hence the
+  rule this file now follows: a documented measurement gets a test that reruns it, or it does not get
+  documented.)
   (The first draft of this correction said the margin shrinks "while the refusal itself gets stronger
   at every size", which contradicts the very figures beside it: a shrinking margin *is* a weakening
   refusal. That clause is true of the H-15 re-cut — comparing the 8-chunk corpus against the 14-chunk

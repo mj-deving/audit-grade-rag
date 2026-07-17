@@ -330,10 +330,10 @@ describe("refusal under corpus growth", () => {
     //
     // This pinned only `at(0)` and `at(-1)` until 2026-07-17, leaving the three middle values quoted
     // in `HARDENING.md` and `eval-harness.md` owned by nothing — a scoring change could take 0.2048
-    // to 0.25 and this stayed green while the docs kept saying 0.2048. Found by applying ISC-23's
-    // probe (does an `expect` COMPUTE the number, or does the string merely appear in a comment?) to
-    // the sweep that had just been "fixed" by adding the 2008 point. Endpoint-pinning was the same
-    // hole one level in.
+    // to 0.25 and this stayed green while the docs kept saying 0.2048. Found by asking of each
+    // documented figure: does an `expect` COMPUTE this number, or does the string merely appear in a
+    // comment? Applied to the sweep that had just been "fixed" by adding the 2008 point, and
+    // endpoint-pinning turned out to be the same hole one level in.
     //
     // Yes, this now fails when scoring improves. That is the point: the docs quote these five
     // numbers, so a change that moves them must move the docs. It is not the `margins.at(-1) >
