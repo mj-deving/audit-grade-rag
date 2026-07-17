@@ -80,8 +80,9 @@ export function retrieveChunks(
 
 // The evidence score of a chunk is the best score either ranker gave it, which is exactly what the
 // out-of-corpus gate reads via its max. Keeping one function for both means the gate and the citation
-// filter can never drift apart into two notions of "evidence".
-function bestEvidenceScores(
+// filter can never drift apart into two notions of "evidence". Exported so the Postgres path filters
+// on the same definition rather than growing a second one.
+export function bestEvidenceScores(
   vectorCandidates: readonly RetrievedChunk[],
   bm25Candidates: readonly RetrievedChunk[],
 ): ReadonlyMap<string, number> {

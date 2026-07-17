@@ -6,6 +6,7 @@ import {
   requireConfiguredEmbeddingProvider,
 } from "../ingest/embedding.js";
 import {
+  bestEvidenceScores,
   evidenceThreshold,
   parseTopK,
   type RetrievalOptions,
@@ -49,19 +50,25 @@ export async function retrievePostgresChunks(
     bm25CandidatesFor(pool, query, options.activeSnapshotId),
   ]);
   const mergedCandidates = reciprocalRankFusion(vectorCandidates, bm25Candidates);
-  // H-15 is closed on the in-memory path only. There, a chunk below the evidence bar cannot be cited;
-  // here `finalChunks` is topK of the fusion regardless of any chunk's own score, so this path can
-  // still refuse a query and hand back chunks at the same time. The filter is not copied across on
-  // the reasoning that it would be untested: this path needs a live Postgres and pgvector, nothing in
-  // CI exercises it, and an unverified filter against the scale problem below is a guess wearing a
-  // fix's clothes. Tracked as H-15/Postgres, open.
-  const finalChunks = mergedCandidates.slice(0, topK);
+  const evidenceScores = bestEvidenceScores(vectorCandidates, bm25Candidates);
+  // H-15 on this path. Until 2026-07-17 `finalChunks` was topK of the fusion regardless of any
+  // chunk's own score, so a refused query returned chunks anyway: `refusedOutcome` copies them into
+  // the response and into the SIGNED LEDGER, and the operator UI renders them. Measured against a
+  // live pgvector before the fix, the out-of-corpus probe returned `outOfCorpus: true` together with
+  // 8 chunks whose dense scores ran -0.026972..0.014098. A refusal that hands back eight
+  // sub-threshold chunks as evidence is the contradiction this item is named for.
+  //
+  // The filter reads the pre-fusion evidence score, never `retrievalScore` after fusion, which is on
+  // the RRF scale (~0.016-0.032) and would drop every chunk on every query.
+  const finalChunks = mergedCandidates
+    .filter((chunk) => (evidenceScores.get(chunk.chunkId) ?? 0) >= evidenceThreshold)
+    .slice(0, topK);
   // `Math.max(0, …)` seeds the max at zero, which matters here and not in memory: `denseCandidates`
   // selects `1 - (embedding <=> $2::vector)`, and pgvector's `<=>` is a cosine DISTANCE in [0,2], so
-  // this expression lands in [-1,1] and CAN be negative. A corpus whose every chunk opposes the query
-  // therefore reports a best evidence score of 0 rather than something negative. That is the refusing
-  // direction, so it is safe, but the negative candidates it hides stay eligible for fusion and for
-  // `finalChunks` above.
+  // this expression lands in [-1,1] and CAN be negative. Measured, not inferred: the out-of-corpus
+  // probe above produced -0.026972. Seeding at 0 keeps a wholly-opposed corpus reporting 0 rather
+  // than a negative best score, which is the refusing direction and therefore safe. The filter now
+  // drops those negative candidates instead of citing them.
   const bestEvidenceScore = Math.max(
     0,
     ...vectorCandidates.map((chunk) => chunk.retrievalScore),
@@ -72,13 +79,13 @@ export async function retrievePostgresChunks(
     bm25Candidates,
     mergedCandidates,
     finalChunks,
-    // H-14, and the reason it is a hardening item rather than a detail. `evidenceThreshold` is
-    // calibrated on the in-memory scorer's IDF-weighted coverage ratio in [0,1]. Neither ranker here
-    // produces that: `ts_rank_cd` is selected with no normalization flag and is not bounded by 1, and
-    // the dense expression above is a rescaled cosine distance. So 0.3 means one thing in memory and
-    // an unmeasured thing here, and nobody has run the measurement — this path has no CI coverage.
-    // The shared constant is the honest form of that: one bar, two scales, visible in the diff. An
-    // option per path would have hidden the same problem behind a knob.
+    // H-14, open, and now measured rather than read off the code. `evidenceThreshold` is calibrated
+    // on the in-memory scorer's IDF-weighted coverage ratio in [0,1]. Neither ranker here produces
+    // that. Against a live pgvector: `ts_rank_cd` returned 0..0.1 across every probe, answered and
+    // refused alike, so THE LEXICAL RANKER CAN NEVER CLEAR THIS BAR — the gate is decided by the
+    // dense score alone, and the bm25 half contributes nothing but fusion rank. The dense scores
+    // above came from `HashEmbeddingProvider`; a real BGE-M3 embedder puts them somewhere else again,
+    // which is the rest of H-14 and still unmeasured. One bar, two scales, both wrong for it.
     outOfCorpus: bestEvidenceScore < evidenceThreshold,
   };
 }
