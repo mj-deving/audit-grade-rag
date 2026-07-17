@@ -201,6 +201,22 @@ function readEmbedding(payload: unknown): EmbeddingVector {
   if (!embedding.every((value): value is number => typeof value === "number")) {
     throw new Error("bge-m3 embedding contains non-numeric values");
   }
+  // `typeof NaN === "number"`, so the check above admits NaN and ±Infinity. That matters here more
+  // than it looks: these values reach Postgres as a vector literal, and pgvector's `<=>` then yields
+  // NaN, which defeats the out-of-corpus gate by making every comparison false. The refusal fails
+  // OPEN — the system answers a question it has no evidence for. Rejecting at the boundary keeps that
+  // impossible rather than merely unlikely.
+  if (!embedding.every((value) => Number.isFinite(value))) {
+    throw new Error("bge-m3 embedding contains non-finite values");
+  }
+  // An all-zero vector is dimensionally valid and semantically empty, and it is the other way to the
+  // same NaN: cosine distance is undefined from the origin, so pgvector returns NaN for
+  // `'[0,0,0]'::vector <=> anything` (verified against pgvector/pgvector:pg16). An embedder that
+  // returns zeros is broken or degenerate, and this is where that gets said out loud instead of
+  // becoming a confident answer downstream.
+  if (embedding.every((value) => value === 0)) {
+    throw new Error("bge-m3 embedding is all zeros, which has no cosine direction");
+  }
   return embedding;
 }
 

@@ -13,6 +13,7 @@ import { HashEmbeddingProvider } from "./ingest/embedding.js";
 import { PostgresIngestionStore } from "./ingest/postgres-store.js";
 import { replayArtifactsFromEntry, replayLedgerEntry } from "./replay/replay.js";
 import { retrievePostgresChunks } from "./retrieval/postgres-retrieval.js";
+import type { RetrievalTrace } from "./retrieval/retrieval.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -176,6 +177,22 @@ async function runRetrievalAssertions(pool: Pool, dir: string): Promise<void> {
     embeddingProvider,
   );
 
+  assertSnapshotBoundRetrieval(trace, currentTrace, firstSnapshotId, secondSnapshotId);
+  expect(refused.outOfCorpus).toBe(true);
+  assertRefusalCitesNothing(trace, refused);
+  assertH14ScaleMismatch({
+    all: [trace, currentTrace, refused],
+    scaleProbe: currentTrace,
+    refused,
+  });
+}
+
+function assertSnapshotBoundRetrieval(
+  trace: RetrievalTrace,
+  currentTrace: RetrievalTrace,
+  firstSnapshotId: string,
+  secondSnapshotId: string,
+): void {
   expect(trace.vectorCandidates).toHaveLength(50);
   expect(trace.bm25Candidates).toHaveLength(50);
   expect(trace.finalChunks).toHaveLength(8);
@@ -185,11 +202,124 @@ async function runRetrievalAssertions(pool: Pool, dir: string): Promise<void> {
     pageStart: 1,
     charStart: 0,
   });
+  // Still `topK`, and deliberately so. A per-chunk evidence filter briefly landed here on 2026-07-17
+  // and took this to 1, which looked like the H-15 fix working: of the 58 merged candidates exactly
+  // one clears `0.3` (`0.691897`), the other 57 sit at `0.259`–`0.295`. But on this path that filter
+  // reads `max(dense, ts_rank_cd)` against a bar calibrated for neither, so it sorts chunks by an
+  // arithmetic accident rather than selecting evidence. It was reverted. See H-14: `ts_rank_cd` is a
+  // cover-density rank, not a coverage ratio, and the dense baseline between unrelated content
+  // (~`0.26`) sits `0.04` under the bar, so its placement here is luck, not calibration.
   expect(currentTrace.finalChunks).toHaveLength(6);
   expect(
     currentTrace.finalChunks.every((chunk) => chunk.corpusSnapshotId === secondSnapshotId),
   ).toBe(true);
-  expect(refused.outOfCorpus).toBe(true);
+}
+
+// H-14, pinned rather than described. These four numbers are the entire argument for why the shared
+// `0.3` bar is meaningless on this path, and they are quoted in `docs/HARDENING.md` — so they get
+// assertions, not a comment. (They had a comment until 2026-07-17, and the probe that found them is
+// worth stating: a figure appearing in a test FILE is not a figure a test COMPUTES. Grep cannot tell
+// the difference; only an assertion can.)
+//
+// If any of these move, H-14's write-up is out of date and this fails, which is the intended
+// coupling: the item stays open until the scales are normalized, and its evidence stays true until
+// then.
+function assertH14ScaleMismatch(probes: {
+  readonly all: readonly RetrievalTrace[];
+  readonly scaleProbe: RetrievalTrace;
+  readonly refused: RetrievalTrace;
+}): void {
+  // EVERY probe, because that is the word H-14 uses. The first version of this helper took two of
+  // the three traces while the docs said "across every probe, answered and refused alike" — a claim
+  // quantified over a set the assertion did not cover. Caught by autoreview: the series-vs-endpoint
+  // hole in yet another disguise. Assert over the same set you quantify over.
+  const lexical = probes.all.flatMap((trace) =>
+    trace.bm25Candidates.map((chunk) => chunk.retrievalScore),
+  );
+  // This fixture's lexical scores are 0..0.1, and that is a fact about THIS FIXTURE: every chunk
+  // mentions a query term exactly once, and ts_rank_cd pays 0.1 per occurrence. It is NOT a ceiling
+  // on ts_rank_cd, and the comment here said it was until a cross-vendor audit ran the numbers
+  // against pgvector/pgvector:pg16: 1 occurrence -> 0.1, five -> 0.5, twenty -> 2, a hundred -> 10.
+  // Unnormalized, unbounded, linear in term frequency. A universal claim from three fixture queries,
+  // which is the H-10 defect this repo already retracted once.
+  //
+  // So the assertion says what it can: on this fixture the lexical half does not reach the bar, which
+  // is why the served gate is dense-decided HERE. It is not dense-decided in general — against a
+  // single-term query a chunk repeating that term three times clears 0.3 on frequency alone, while a
+  // multi-term query scores 0 if any one term is absent however often the others repeat. Neither
+  // behaviour is a coverage ratio, which is H-14: the bar is meaningless on this path rather than
+  // merely miscalibrated.
+  expect(Math.max(...lexical), "this fixture's lexical scores stay under the bar").toBeLessThan(
+    0.3,
+  );
+  expect(round6(Math.max(...lexical))).toBe(0.1);
+  // `scaleProbe` is named rather than positional because the docs' dense figures come from ONE
+  // specific query ("Aktualisierte Auditpflicht"), and the first version of this took whichever
+  // trace happened to be first. Tightening `toBeCloseTo(…, 5)` to an exact 6dp compare is what
+  // exposed that: it failed with "expected 0.691868 to be 0.691897" — a different probe's number,
+  // silently accepted by the looser assertion.
+  const dense = probes.scaleProbe.vectorCandidates.map((chunk) => chunk.retrievalScore);
+  // One genuinely relevant chunk, far above the bar; everything else clustered just under it. The
+  // separation is real, but 0.3 sits only ~0.04 above the noise floor, and that placement is luck:
+  // the bar was tuned for the in-memory scorer, which is not this.
+  //
+  // Each figure at the precision the docs PUBLISH it, and that rule cuts both ways.
+  // `HARDENING.md` quotes the peak as `0.691897`, so that is exact to 6dp: `toBeCloseTo(…, 5)`
+  // would let it drift to `0.691901` and stay green, leaving the doc stale with a passing test.
+  //
+  // The floor it publishes only as "~`0.26`", never as `0.259852` — so pinning six digits there
+  // guards nothing and fails CI on harmless movement. The first version of this did exactly that,
+  // over-correcting the P2 above it by one turn of the same screw. Same rule, other direction:
+  // assert at the precision the claim makes, not looser AND not tighter.
+  expect(round6(Math.max(...dense))).toBe(0.691897);
+  expect(Math.min(...dense), "the dense noise floor sits at ~0.26").toBeCloseTo(0.26, 2);
+  // …and the claim that figure serves: the bar has ~0.04 of headroom over the noise, which is why
+  // its placement on this path is luck rather than calibration.
+  expect(0.3 - Math.min(...dense), "the bar's headroom over the noise floor").toBeLessThan(0.05);
+  // pgvector's `<=>` is a cosine DISTANCE in [0,2], so `1 - (…)` lands in [-1,1] and goes negative.
+  // The sign is the property; the value is what the docs quote, so both are asserted.
+  const refusedDense = probes.refused.vectorCandidates.map((chunk) => chunk.retrievalScore);
+  const refusedDenseFloor = Math.min(...refusedDense);
+  expect(refusedDenseFloor, "the dense score is not bounded below by 0").toBeLessThan(0);
+  expect(round6(refusedDenseFloor)).toBe(-0.026972);
+  // The docs quote the refused range as `-0.026972..0.014098`, and only the floor was asserted —
+  // shifting the max to 0.024098 left all three integration tests green. Both ends of a quoted range
+  // are quoted, so both ends get an assertion. (Found by a cross-vendor audit, which is fair: it is
+  // the same series-vs-endpoint hole as everywhere else in this file's history, this time inside the
+  // guard written to close it.)
+  expect(round6(Math.max(...refusedDense))).toBe(0.014098);
+}
+
+function round6(value: number): number {
+  return Number(value.toFixed(6));
+}
+
+// H-15 on the served path, the half of it that is provable on any score scale: if the system says no
+// evidence exists, it must not hand back evidence.
+//
+// `refused.outOfCorpus` alone passed for months while `finalChunks` still held 8 chunks — and
+// `refusedOutcome` copies those into the response and into the SIGNED LEDGER, and the operator UI
+// renders them, so the system refused a question and shipped eight pieces of "evidence" for the
+// refusal. Measured against this same pgvector container before the fix: those 8 chunks scored
+// -0.026972..0.014098, every one far under the bar. Asserting the flag without asserting the payload
+// is exactly what let it stand.
+//
+// The OTHER half of H-15 — no sub-threshold chunk cited on an ANSWERED query — is not asserted here,
+// and its absence is deliberate rather than an oversight. It holds on the in-memory path, where the
+// bar and the scores share a scale. Here they do not (H-14: `ts_rank_cd` is an unbounded cover-
+// density rank, the dense score is a rescaled cosine distance, and the bar was calibrated for a
+// third thing entirely), so asserting it would pin a filter that sorts by an arithmetic accident.
+// That assertion belongs here the day H-14 closes.
+//
+// Mutation-falsified 2026-07-17 by removing the refusal-emptying from `postgres-retrieval.ts`, with
+// the snapshot/topK assertions masked so this function had to catch it alone. It does:
+// `a refusal must cite nothing: expected [ … ] to have a length of +0 but got 8`.
+function assertRefusalCitesNothing(...traces: readonly [RetrievalTrace, RetrievalTrace]): void {
+  const [answered, refused] = traces;
+  expect(refused.finalChunks, "a refusal must cite nothing").toHaveLength(0);
+  // The counterweight: emptying `finalChunks` unconditionally would satisfy the line above.
+  expect(answered.finalChunks.length, "an answered query must still cite").toBeGreaterThan(0);
+  expect(answered.outOfCorpus, "…and must not be refused in the first place").toBe(false);
 }
 
 async function postgresDatabase(): Promise<DatabaseHandle> {

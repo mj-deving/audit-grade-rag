@@ -72,8 +72,29 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   non-browser clients and two reputable mirrors were found to differ in wording, so provenance names
   what was retrieved and when rather than claiming OJ status.
 - [x] H-10 (Refusal is evidence-driven, not stopword-driven **on the in-memory fixture path**): a
-  question with no content-word overlap with the corpus is refused, and the margin does not shrink
-  as the corpus grows. Scope is the path `/demo` and `pnpm eval` run — `retrieveChunks` over
+  question with no content-word overlap with the corpus is refused, and the refusal stays clear of
+  the bar at every corpus size — measured, the margin never falls below `0.19`, i.e. such a question
+  never scores above roughly a third of the `0.3` threshold.
+  This criterion said "and the margin does not shrink as the corpus grows" until 2026-07-17. That was
+  the third life of the same false claim: it shipped as "the margin widens as the corpus grows", was
+  retracted on 2026-07-16 when an audit disproved it, and survived here in the criterion of the very
+  item that retracted it. It is false: over the sweep the margin runs `0.2195 → 0.2048 → 0.1969 →
+  0.2140 → 0.2306`, so it shrinks over the first three points, which is all the claim needs to be
+  wrong. The margin has no trend — it dips and recovers — and a floor is the property the sweep
+  asserts.
+  (This sentence read "and ends below where it started" until 2026-07-17, which was true of the
+  four-point sweep it was written against and became false the moment the 2008-chunk point was added
+  and the series ended at `0.2306`. A number in prose goes stale the instant the measurement behind
+  it moves, and this one went stale inside the item whose whole subject is that failure. Hence the
+  rule this file now follows: a documented measurement gets a test that reruns it, or it does not get
+  documented.)
+  (The first draft of this correction said the margin shrinks "while the refusal itself gets stronger
+  at every size", which contradicts the very figures beside it: a shrinking margin *is* a weakening
+  refusal. That clause is true of the H-15 re-cut — comparing the 8-chunk corpus against the 14-chunk
+  one at each sweep point — and false of corpus growth, which is the subject here. Lifting a true
+  sentence out of the context that made it true is the same defect as the one this paragraph
+  retracts, committed while retracting it.)
+  Scope is the path `/demo` and `pnpm eval` run — `retrieveChunks` over
   `loadFixtureCorpus`. The Postgres path has its own scorer and its own threshold and is NOT covered
   by this item; see H-14.
   Falsifier: neutralise the term weighting, or make the bm25 length bonus additive again, and the
@@ -104,66 +125,272 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   paid out for matching stopwords. **Nothing tested the claim**: the tests asserted a relation at one
   corpus size (14 chunks) while the growth property lived only in a comment. The lesson is the rule
   this repo already had — a claim without a probe is "should work" — and a comment is not a probe.
-  The sweep in `retrieval.unit.test.ts` now tests it at 14/24/64/314 chunks.
+  The sweep in `retrieval.unit.test.ts` now tests it at 8/18/58/308/2008 chunks. (2008 was added
+  2026-07-17. It was quoted in the caveat below while the sweep stopped at 308, and a cross-vendor
+  audit showed what that costs: a defect gated on corpus size —
+  `inverseDocumentFrequencies(activeChunks.length > 1_000 ? [] : activeChunks)` — left the sweep
+  entirely green, and went red only once the documented point had a test.)
 
-  Caveat, measured and not claimed away: the guarantee is bounded. Growth in the same language widens
-  the margin (`0.104` → `0.069` over 14 → 2014 chunks). Growth with alien vocabulary erodes it
-  (`0.274` at 2000 synthetic chunks — refused, but close), because `base` is a ratio of IDF sums and
-  drifts toward the query's plain matched-token fraction, which for this question is `3/10` — the
-  threshold exactly. See `docs/eval-harness.md`. Mixed-language corpora are the case to watch; H-11.
-- [ ] H-15 (One threshold, one meaning): a chunk cited as evidence clears the same bar that decides
-  whether evidence exists at all. Needs a design decision from Marius, not a default from me.
+  **And the first replacement assertion was wrong too**, which is the deeper half of the lesson. The
+  retraction pinned the sweep with `margins.at(-1) > margins.at(0)` — "growth ends better than it
+  started" — a weakened restatement of the same false claim, true only for those four sweep points on
+  a 14-chunk fixture. The H-15 re-cut (14 → 8 chunks) broke it while the refusal got *stronger* at
+  every size. An assertion that fails when the thing it guards improves is measuring the fixture. The
+  sweep now asserts a floor — the CRR question never scores above a third of the bar at any corpus
+  size — and asserts no trend, because the margin has none: it dips and recovers.
+
+  Caveat, measured and not claimed away: the guarantee is bounded. Growth in the same language ends
+  wider than it started but is not monotonic, and the shape matters more than the endpoints: measured
+  over 8/18/58/308/2008 chunks the margin runs `0.2195 → 0.2048 → 0.1969 → 0.2140 → 0.2306`. It gets
+  worse before it gets better, and its minimum sits at 58 chunks — inside the range H-1 is about to
+  move through on the way to 100+. (This sentence read "growth in the same language widens the
+  margin" until 2026-07-17. True at the endpoints, false as a trend, and misleading about precisely
+  the growth this project is about to do. Fourth instance of the same defect in three days, in the
+  paragraph that congratulates itself on re-measuring: the figures were right and the verb was not.)
+  Growth with alien
+  vocabulary erodes it (`0.2825` at 2000 added chunks — refused, but rising toward the bar as the
+  corpus grows, while German filler at the same size falls to `0.0694`), because `base` is a ratio of
+  IDF sums and drifts toward the query's plain matched-token fraction, which for this question is
+  `3/10` — the threshold exactly. See `docs/eval-harness.md`. Mixed-language corpora are the case to
+  watch; H-11. (Every figure in this paragraph was re-measured after the H-15 re-cut; the previous
+  ones were taken against the 14-chunk corpus and were stale the moment it moved. Numbers in prose are
+  owned by nothing — and this paragraph proved its own sentence: it carried `0.283` for a day with no
+  test behind it AND no committed filler to reproduce it. Re-measured 2026-07-17 at `0.282525`
+  against a filler that now lives in the test. The number was right; nothing was holding it.)
+- [x] H-15 (One threshold, one meaning): a chunk cited as evidence clears the same bar that decides
+  whether evidence exists at all.
   Falsifier: an answered question cites a chunk whose own score would have been refused as
   out-of-corpus had it been the best candidate.
-  Open. Found by the third cross-vendor audit (gpt-5.5, 2026-07-16). `0.3` is applied at the QUERY
-  level — "is there any evidence?" — while `finalChunks` returns `topK` regardless of each chunk's
-  own score. So a chunk at `0.265` is simultaneously not-evidence (if best) and evidence (as a
-  citation). Measured on "Wie muessen synthetische Inhalte gekennzeichnet werden?": gate opened by
-  `art50-marking` at `0.487`, and the answer also cites `art50-deepfake` (`0.265`) and
+  Closed 2026-07-16 **on the in-memory fixture path only** (the served Postgres path is H-14/H-15
+  Postgres and is untouched). `retrieveChunks` filters `finalChunks` to the same threshold the gate
+  uses, and a refusal returns no chunks at all. Probe: `retrieval.unit.test.ts` › "a citation clears
+  the same bar as the gate" (3 tests). Mutation-falsified 2026-07-17 by deleting the filter: **2 of
+  the 3 go red** (`cited art50-first-contact-accessibility below the evidence bar: expected 0.218509
+  to be >= 0.3`, and "cites nothing at all when it refuses"). The third, "filters on the evidence
+  score, not the fused rank score", stays GREEN under that mutation and is not a guard for this item —
+  it pins the RRF-scale trap, a different defect. The neighbouring describe › "a duty is never
+  retrievable without its exception" (3 tests) also stays green here; it guards the corpus cut.
+  (This paragraph read "(5 tests) … All were mutation-falsified" until the fifth cross-vendor audit
+  counted them. Both halves were false: the describe had 3 tests, and 1 of them survives the mutation.
+  A test count in prose is owned by nothing, exactly like the numbers in H-10.)
+  **`pnpm eval` does not verify this item and never did** — `scoreCitationAccuracy` is recall-only, so
+  deleting the filter still leaves it `passed: true` at `citation-accuracy: 1` (measured 2026-07-17).
+  The unit tests are the whole guard.
+  **The threshold stopped being configurable 2026-07-17, and that is the actual fix.** It had been an
+  option, `outOfCorpusThreshold`, and three commits went into guarding it against values that
+  disabled the bar without failing: `NaN` (every comparison false, so nothing refuses AND every
+  citation drops), `0` (scores are non-negative and `bestEvidenceScore` is `Math.max(0, …)`, so
+  `best < 0` never refuses and `score >= 0` filters nothing — measured, the out-of-corpus banking
+  question answered citing 8 chunks of the AI Act, H-10's defect reachable by config alone),
+  `1e-300` and `Number.MIN_VALUE` (the same no-op wearing a positive sign, which the interval guard
+  accepted), and any value above the score ceiling (refuses EVERY question, indistinguishably from a
+  legitimate refusal, because "no evidence in the corpus" is this product's normal correct output).
+  Provenance, because it is the point: `NaN` came from the fourth cross-vendor audit (gpt-5.6-sol).
+  `0` came from autoreview **on that fix**, which had permitted it deliberately. The ceiling came from
+  autoreview **on that fix**, which had dropped the upper bound reasoning that a too-high threshold
+  "fails loudly" — it does not fail loudly, it fails invisibly. The subnormals came from the fifth
+  cross-vendor audit (gpt-5.6-sol, 2026-07-17) **on that fix**, which had called the guard
+  "three-sided and every side a probe". Each fix was written carefully; each reintroduced the same
+  class of error one layer up; a fourth guard would have closed the fourth value and missed the fifth.
+  What ended it was not a better interval. **Nothing ever passed the option** — not `runtime-app.ts`,
+  not `demo-app.ts`, not the eval harness, not a config file, not an env var. Every one of those
+  failures was reachable only through a knob with no caller, so the knob is gone and its whole failure
+  class with it. `evidenceThreshold` is now one exported constant. The lesson is not about validation:
+  three careful commits went into hardening a hole that existed because the option existed, and the
+  option's own callers had been saying so the entire time.
+  **The Postgres path had a related hole, not the identical one**, and the first version of this
+  paragraph said "identical". It had no citation filter at all (`finalChunks` was
+  `mergedCandidates.slice(0, topK)`), so a bad threshold there broke only the refusal flag; the
+  citations were never dropped, because they were never filtered.
+  **Half-closed on the Postgres path, 2026-07-17, and the split is the finding.**
+  First, the premise had to go. The initial fix declined to touch this path at all, reasoning that
+  "nothing in CI exercises that path, and an unverified filter would be a guess wearing a fix's
+  clothes". **That reason was false, and false in this repo's signature way — a property asserted
+  instead of probed, written into the very commit that retracts the habit.**
+  `.github/workflows/ci.yml` provisions `pgvector/pgvector:pg16` and runs `pnpm check:full` →
+  `pnpm test:integration`, and `acceptance.postgres-ingest.integration.test.ts` calls
+  `retrievePostgresChunks` three times. The path was never unreachable; it spins up its own container
+  and runs in 12 seconds. Autoreview caught the claim; a `grep` and one test run settled it.
+  **CLOSED: a refusal cites nothing.** Measured against that live pgvector, before the fix: the
+  out-of-corpus probe returned `outOfCorpus: true` **together with 8 chunks**, every one under the bar
+  (dense `-0.026972`..`0.014098`). `refusedOutcome` copies `finalChunks` into the response and into
+  the SIGNED LEDGER, and the operator UI renders them — so the served path refused a question and
+  shipped eight pieces of evidence for the refusal. "No evidence exists" and "here are eight pieces of
+  evidence" cannot both be the output, and that contradiction needs no calibrated scale to be wrong,
+  which is why it is fixed now. Mutation-falsified with the neighbouring assertions masked:
+  `a refusal must cite nothing: expected [ … ] to have a length of +0 but got 8`.
+  **OPEN: a sub-threshold chunk can still be cited on an ANSWERED query here.** The first version of
+  this fix closed that too, by copying the in-memory per-chunk filter across, and **it was wrong and
+  autoreview caught it within the hour.** On the fixture that filter took an answered trace from 6
+  citations to 1, and I read the drop as the fix working; it was the bug. Applying a bar calibrated
+  for another scale is H-14 wearing a fix's clothes, and it is a worse defect than the one it closes.
+  Reverted.
+  **The reason first given for reverting was itself false**, and a cross-vendor audit refuted it a
+  day later: "ts_rank_cd never exceeds `0.1`, so the filter necessarily deletes the lexical ranker."
+  It does not necessarily do anything of the kind — against a SINGLE-term query, `ts_rank_cd` reaches
+  `0.3` at three occurrences and keeps climbing (see H-14 for the probe table, including the
+  multi-term case where it stays at `0` however often the matched term repeats). The `0.1` was the
+  fixture's, not the ranker's.
+  The real reason is worse for the bar rather than better: `max(dense, ts_rank_cd)` compares two
+  incommensurable scales against a number calibrated for a third. A lexical `0.3` is a cover-density
+  rank that is `0` whenever any query term is missing and unbounded once they are all present; a
+  dense `0.3` is a rescaled cosine distance; the bar means "30% IDF-weighted coverage" on a path that
+  is not this one. Such a filter would neither reliably keep evidence nor reliably drop non-evidence —
+  it would sort chunks by an arithmetic accident. Deferring is right; the first justification for
+  deferring was a universal claim generalized from a fixture, which is the H-10 defect again. The
+  per-chunk half waits on H-14: normalize the rankers, or give each its own criterion, then filter.
+  H-14 stays open and is now MEASURED rather than read off the code — see below.
+  Found by the third cross-vendor audit (gpt-5.5, 2026-07-16). `0.3` was applied at the QUERY level —
+  "is there any evidence?" — while `finalChunks` returned `topK` regardless of each chunk's own score.
+  So a chunk at `0.265` was simultaneously not-evidence (if best) and evidence (as a citation).
+  Measured on "Wie muessen synthetische Inhalte gekennzeichnet werden?": gate opened by
+  `art50-marking` at `0.487`, and the answer also cited `art50-deepfake` (`0.265`) and
   `art50-first-contact-accessibility` (`0.270`).
   **Pre-existing in class, made worse by me in degree.** Before the H-10 length-bonus fix those two
   scored `0.321` and `0.342` — above the bar — and only the 4th-ranked chunk sat below it. The
   multiplicative bonus rescaled every score downward while `0.3` stayed put, taking this question
   from zero sub-threshold citations to two.
   Not the same class as the duplicate-id blocker, and the difference matters: there, the gate was
-  opened by text the citation did not show, which is a provenance lie. Here every cited chunk is
-  real, retrieved, and does contain the claim extracted from it. This is an internal inconsistency
+  opened by text the citation did not show, which is a provenance lie. Here every cited chunk was
+  real, retrieved, and did contain the claim extracted from it. This was an internal inconsistency
   in what "evidence" means, not a fabrication.
-  Resolution is a genuine design call with a visible cost either way — filter `finalChunks` to the
-  bar (answers get thinner, and `expected_chunks` in the golden set may move), give citations their
-  own lower bar (two constants to keep honest), or state that `0.3` is a query gate and ranking is
-  ranking (cheapest, but the demo's own copy has to stop implying otherwise). Related: H-14 is the
-  same shape — one constant carrying more than one meaning.
+
+  **The filter alone would have made the product worse, and the measurement is why it did not ship
+  alone.** Applied to the corpus as it was cut, `pnpm eval` went to `citation-accuracy: 0.8`,
+  `passed: false`. One case regressed — the one tagged `ambiguous`: "Muss jeder KI-generierte Text
+  offengelegt werden, wenn er veroeffentlicht wird?" kept `art50-public-interest-text` (the DUTY,
+  `0.3286`) and dropped `art50-editorial-exception` (the EXCEPTION, `0.0491`). Since `renderPrompt`
+  reads `finalChunks`, the exception was not merely uncited, it was absent from the model's prompt,
+  leaving "yes, disclose" as the only available answer. That is a misrepresentation of Article 50 on
+  the single golden case built to test duty-versus-exception, and it is the same shape
+  `corpus-provenance.unit.test.ts` already guards the corpus against: verbatim text minus a clause is
+  still not the law. An internal inconsistency traded for an external wrongness is a bad trade;
+  correctness outranks consistency.
+  **Root cause was the chunking, not the scorer.** Article 50 states a duty and then narrows it with
+  a counter-clause naming its subject anaphorically. Four of the five exception chunks opened with the
+  identical string "Diese Pflicht gilt nicht", the fifth with "Ist der Inhalt"; none named the duty it
+  limited. Two measured consequences. An exception was unreachable from its own duty's question (it
+  shared exactly ONE token with it — "wenn", a stopword). And an exception drew its neighbours: on the
+  `contradictory` question, which names only the law-enforcement carve-out, the intended chunk did
+  rank first (`0.9158`) but three unrelated exception chunks followed at `0.8152`, `0.7661` and
+  `0.6623`, and `art50-deepfake` — a duty, not an exception — landed among them at `0.6075`. All five
+  cleared the `0.3` bar and would be cited; four of them are wrong. The fifth exception,
+  `art50-deepfake-artistic`, scored `0.0` and was invisible. So the exception chunks were not so much
+  indistinguishable from each other as unanchored: they matched on shared counter-clause vocabulary
+  ("Diese Pflicht gilt nicht") rather than on the duty they limit, which is also why the one that
+  shares no such vocabulary vanished entirely. So the corpus was re-cut along the Absätze: **14 chunks → 8**, each duty
+  carrying the exception that limits it. `art50-deepfake` already did this inline and was the
+  precedent. The four `corpus provenance` tests pass unmodified — the re-cut is still verbatim and
+  still accounts for the whole source in order.
+  With both changes, `pnpm eval` is `passed: true` at citation-accuracy `1.0`. That number is not
+  evidence for this item and must not be read as any: `scoreCitationAccuracy` is recall-only, so
+  deleting the filter entirely still yields `passed: true` at `citation-accuracy: 1` (measured
+  2026-07-17). What shows the filter is doing work rather than passing vacuously is the survivor
+  count — 2, 1, 1, 5 and 0 out of a possible 8, instead of 8 every time — and what *guards* it is
+  `retrieval.unit.test.ts` › "a citation clears the same bar as the gate", which goes red when the
+  filter is removed. The eval is blind here; see `docs/eval-harness.md`.
+  **What this cost:** citation granularity. A citation now points at a duty together with its
+  carve-out rather than at either alone. For an audit-grade product that is arguably the better unit —
+  a duty is never displayed without what limits it — but it is a real loss of precision and it is a
+  choice, not a free win.
+  **What it exposed, and did not fix:** retrieval leans on the model more than the retriever. Before
+  the re-cut, `topK=8` against a 14-chunk corpus returned 57% of the corpus for every query and the
+  model selected; citation-accuracy of `1.0` was partly an artifact of that dump. The margins are also
+  thin: the `ambiguous` question clears the bar at `0.331`, and deleting the single word
+  "veroeffentlicht" from it drops it under. That is H-11. Related: H-14 is the same shape as the
+  original defect — one constant carrying more than one meaning.
 - [ ] H-14 (The Postgres path's refusal threshold means something): the served API path refuses an
   out-of-corpus question, verified against a real question rather than gibberish.
   Falsifier: ask `retrievePostgresChunks` the CRR question against the Article 50 snapshot and watch
   it answer.
-  Read from the code, not measured — no Postgres and no `BGE_M3_EMBEDDING_ENDPOINT` are reachable
-  here, so the behaviour below is UNVERIFIED and the item stays open on that ground alone:
-  - `src/modules/retrieval/postgres-retrieval.ts` redeclares `defaultThreshold = 0.3` (line 38) and
-    never calls the `retrieveChunks` that H-10 fixed. `/demo` is hardened; the API routes in
-    `runtime-app.ts` are not. Both are served by `src/commands/server.ts`.
+  **Measured 2026-07-17 against a live `pgvector/pgvector:pg16`.** This entry said "read from the
+  code, not measured — no Postgres and no `BGE_M3_EMBEDDING_ENDPOINT` are reachable here" from
+  2026-07-16 until then, and the first half of that was simply untrue: `pnpm test:integration` starts
+  its own pgvector container and runs in 12 seconds, and CI has been provisioning one all along. The
+  item did not need a new environment, it needed someone to run it. What IS still unreachable is a
+  real BGE-M3 endpoint, so the dense figures below come from `HashEmbeddingProvider` and the item
+  stays open on that ground — the *lexical* figures do not depend on the embedder and are production-
+  real.
+  - **`ts_rank_cd` is not a coverage ratio, so `0.3` means nothing stable against it.** Measured
+    against `pgvector/pgvector:pg16`, with `to_tsvector('simple', …)` and `plainto_tsquery('simple', …)`:
+
+    | probe | score |
+    |---|---|
+    | query `auditpflicht`, chunk repeats it 1× / 5× / 20× / 100× | `0.1` / `0.5` / `2` / `10` |
+    | query `auditpflicht beleg`, chunk has `auditpflicht` 3× and no `beleg` | `0` |
+    | query `auditpflicht beleg`, chunk has `auditpflicht` 20× and no `beleg` | `0` |
+    | query `auditpflicht beleg`, chunk has both once | `0.1` |
+
+    `plainto_tsquery` ANDs the lexemes, so missing one query term scores `0` however often the rest
+    appear; clearing that hurdle scores unnormalized and unbounded, rising with frequency and cover
+    density. Comparing that to a `[0,1]` coverage ratio is a category error, not a tuning question.
+    (Two retracted claims live in this bullet, and both are the H-10 defect above — a universal claim
+    from one probe shape. It first read "**`ts_rank_cd` can never clear this bar**", generalized from
+    the fixture's `0`–`0.1`, where every chunk happens to mention a query term once. Its replacement
+    read "`0.3` means the chunk repeats a query term three times" — true of a SINGLE-term query only,
+    while the served questions are multi-term German. The first was refuted by a cross-vendor audit,
+    the second by the same audit's next round, an hour after I wrote it as the correction.)
+  - **The bar sits `0.04` above the dense noise floor.** Unrelated content scored ~`0.26` and the one
+    genuinely relevant chunk scored `0.691897`, against a bar of `0.3`. The separation is real but the
+    bar's placement inside it is luck, not calibration: it was tuned for a different scorer entirely.
+  - **The dense score goes negative**, as predicted from the algebra and now observed: `-0.026972` on
+    the out-of-corpus probe.
+  The rest of the item, read from the code and still unverified against a real embedder:
+  - `src/modules/retrieval/postgres-retrieval.ts` never calls the `retrieveChunks` that H-10 fixed:
+    it runs its own SQL rankers and only shares the fusion and the bar. `/demo` is hardened; the API
+    routes in `runtime-app.ts` are not. Both are served by `src/commands/server.ts`. (This bullet
+    read "redeclares `defaultThreshold = 0.3` (line 38)" until 2026-07-17. That duplicate constant is
+    gone — both paths now read the one exported `evidenceThreshold` — but the item is unchanged by
+    that: sharing the constant does not make it mean the same thing on both sides, which is precisely
+    what this item is.)
   - The constant `0.3` was calibrated for an IDF-weighted coverage ratio in `[0,1]`. It is applied
-    to two other scales: `1 - (embedding <=> $2::vector)` (cosine similarity, whose baseline between
-    unrelated German sentences is high) and `ts_rank_cd(...)` (unbounded, typically an order of
-    magnitude smaller). `bestEvidenceScore` takes the `max` of the two, so the larger-scaled dense
-    score decides the gate. Three scales, one constant.
+    to two other scales: `1 - (embedding <=> $2::vector)` (pgvector's `<=>` is a cosine DISTANCE in
+    `[0,2]`, so this lands in `[-1,1]` and can be NEGATIVE, and its baseline between unrelated German
+    sentences is high) and `ts_rank_cd(...)` (unbounded, typically an order of magnitude smaller).
+    `bestEvidenceScore` takes the `max` of the two seeded at 0, so the larger-scaled dense score
+    decides the gate and a negative dense score is hidden from it. Three scales, one constant.
+    **This is why the citation filter cannot simply be copied from the other path**, which was tried
+    on 2026-07-17 and reverted the same hour: `max(dense, ts_rank_cd)` against `0.3` compares two
+    incommensurable scales against a number calibrated for a third, so it sorts chunks by an
+    arithmetic accident rather than selecting evidence. Closing that half of H-15 here requires
+    closing this item first.
   - `plainto_tsquery('simple', ...)` applies no stemming and no stopword removal, so the lexical
     half carries the same German-stopword exposure H-10 just fixed on the other path.
-  - The only probe is `"zzzz yyyyy xxxx"` (`acceptance.postgres-ingest.integration.test.ts:172`) —
-    noise that yields an empty tsquery. It cannot distinguish a working gate from an absent one.
+  - The only refusal probe is still `"zzzz yyyyy xxxx"`
+    (`acceptance.postgres-ingest.integration.test.ts`) — noise that yields an empty tsquery, and
+    measurement confirms it: its bm25 scores are `0`..`0` exactly. It cannot distinguish a working
+    gate from an absent one, and this item does not close until a real German question with no
+    evidence in the snapshot is refused here, the way H-10's CRR question is on the other path. What
+    the probe DID earn once assertions were put on its payload is the H-15 closure above: it proved
+    the refusal was returning 8 chunks.
   Found by the same cross-vendor audit as the H-10 retraction.
-- [ ] H-13 (The required check is not load-flaky): no unit test spawns a subprocess under the unit
+- [x] H-13 (The required check is not load-flaky): no unit test spawns a subprocess under the unit
   project's 5s default timeout. Falsifier: run `pnpm check:fast` under CPU contention and watch a
   timeout fail the build.
-  Open, pre-existing. Surfaced by the cross-vendor audit, which saw
-  `acceptance.eval-report-ui-security.unit.test.ts:101` and `:137` time out at 5000ms while running
-  concurrently with other work. Both pass here — measured at 2194ms and 2056ms, green in 6 of 6
-  runs — so the "check:full green" claims on this wave's commits hold. But they shell out to
-  `pnpm eval` and `pnpm report` inside the *unit* project, leaving ~2.3x margin on a 5s default,
-  which is not enough for a required status check on a shared runner. Fix path: move them to the
-  integration project (30s timeout, already used for exactly this kind of test) or give them an
-  explicit timeout.
+  Closed 2026-07-16. The six subprocess/ingest tests in
+  `acceptance.eval-report-ui-security.unit.test.ts` carry an explicit 30s timeout; the other three are
+  synchronous and keep the 5s default. Verified against the falsifier on the same loaded machine that
+  produced the failures below: five consecutive runs at the DEFAULT timeout, 9 of 9 green each time.
+  The file stays in the `unit` project deliberately — moving it to `integration`, the other fix path,
+  would have dropped it out of `check:fast` and called that a fix.
+  Was open and pre-existing, and **the falsifier fired**. Surfaced by the cross-vendor audit, which
+  saw `acceptance.eval-report-ui-security.unit.test.ts:101` and `:137` time out at 5000ms while
+  running concurrently with other work. They were green in 6 of 6 runs when first investigated, at
+  2194ms and 2056ms.
+  Reproduced under real CPU contention on 2026-07-16, on a **clean `origin/main` worktree with no
+  local changes**, three consecutive runs of the same untouched code: 4 failed, 5 failed, 3 failed of
+  9 — every failure `Test timed out in 5000ms`. A fourth run passed 9 of 9. Same code, different
+  outcome per run, which is the definition of the defect. At `--testTimeout=30000` all 9 pass. The
+  measurement matters beyond this item: during the H-15 work these timeouts appeared in the suite and
+  looked exactly like a regression, and the only way to tell was to run untouched `main` beside it.
+  A flaky required check does not merely fail builds, it launders real regressions as noise and noise
+  as regressions.
+  They shell out to `pnpm eval` and `pnpm report` inside the *unit* project, leaving ~2.3x margin on a
+  5s default, which is not enough for a required status check on a shared runner.
+  Fixed in its own commit rather than bundled into H-15, because it is a separate criterion and
+  bundling it would have hidden it. It stopped being deferrable when it blocked the H-15 commit twice
+  through the pre-commit hook — the honest options there were to fix the gate or to bypass it with
+  `--no-verify`, and weakening a gate to get past it is how gates die.
 - [ ] H-12 (The ledger attests the corpus, not its name): `corpusSnapshotHash` — carried by fixture
   chunks, eval outcomes and every demo ledger row — is recomputable from the corpus it claims to
   pin. Falsifier: change a byte of the corpus and the hash the ledger records does not move.
