@@ -25,16 +25,27 @@ import {
   loadFixtureCorpus,
   loadGoldenSet,
 } from "../src/modules/eval/eval.js";
+import { loadGateProbes } from "../src/modules/eval/gate-probes.js";
 import { requireConfiguredEmbeddingProvider } from "../src/modules/ingest/embedding.js";
 
 async function main(): Promise<void> {
   const provider = requireConfiguredEmbeddingProvider();
   const chunks = await loadFixtureCorpus(defaultCorpusFixtureDir);
   const cases = await loadGoldenSet(defaultGoldenSetPath);
+  // The H-11 gate-separation probes are embedded too. They are not part of the eval, but the probe
+  // that measures whether cosine could serve as an evidence gate has to read the same real vectors
+  // the ranking does, offline and from the same committed artifact — otherwise the separation figure
+  // it publishes is owned by a machine that happened to have an endpoint.
+  const probes = await loadGateProbes();
 
-  // Every distinct text the dense pass will ever look up: each chunk's text and each golden question.
+  // Every distinct text the dense pass will ever look up: each chunk's text, each golden question,
+  // and each gate probe.
   const texts = [
-    ...new Set([...chunks.map((chunk) => chunk.chunkText), ...cases.map((c) => c.question)]),
+    ...new Set([
+      ...chunks.map((chunk) => chunk.chunkText),
+      ...cases.map((c) => c.question),
+      ...probes.map((p) => p.question),
+    ]),
   ];
 
   const vectors: Record<string, readonly number[]> = {};
