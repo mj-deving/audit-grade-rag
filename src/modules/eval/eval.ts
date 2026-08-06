@@ -12,6 +12,11 @@ import {
 } from "../generation/generation.js";
 import { defaultEmbeddingModel } from "../ingest/embedding.js";
 import { retrieveChunks } from "../retrieval/retrieval.js";
+import {
+  defaultEmbeddingCachePath,
+  denseScoresFromCache,
+  loadEmbeddingCache,
+} from "./embedding-cache.js";
 
 export type ExpectedOutcome = "answered" | "refused-out-of-corpus" | "blocked-unsafe";
 
@@ -126,12 +131,35 @@ export function evaluateGoldenSet(
 }
 
 export async function runGoldenEvaluation(
-  options: { readonly goldenPath?: string; readonly corpusDir?: string } = {},
+  options: {
+    readonly goldenPath?: string;
+    readonly corpusDir?: string;
+    readonly embeddingCachePath?: string;
+  } = {},
 ): Promise<EvalRun> {
   const cases = await loadGoldenSet(options.goldenPath ?? defaultGoldenSetPath);
   const chunks = await loadFixtureCorpus(options.corpusDir ?? defaultCorpusFixtureDir);
+  // H-11 Option A: the eval retrieves with the SAME modality production does — real bge-m3 dense
+  // vectors — read from a committed cache computed at author time over the fixed corpus and golden
+  // set. The pin `bge-m3@1024-v1` is no longer a label over a lexical path; it names the model that
+  // actually ranks. The guard below refuses a cache produced by a different model, so a stale cache
+  // cannot silently make the pin lie again.
+  const cache = await loadEmbeddingCache(options.embeddingCachePath ?? defaultEmbeddingCachePath);
+  if (cache.provenance.embeddingModelVersion !== pinnedEvalTuple.embeddingModelVersion) {
+    throw new Error(
+      `embedding cache model ${cache.provenance.embeddingModelVersion} does not match the pinned eval model ${pinnedEvalTuple.embeddingModelVersion}`,
+    );
+  }
   const outcomes = new Map(
-    cases.map((goldenCase) => [goldenCase.id, runGoldenCase(goldenCase, chunks, pinnedEvalTuple)]),
+    cases.map((goldenCase) => [
+      goldenCase.id,
+      runGoldenCase(
+        goldenCase,
+        chunks,
+        pinnedEvalTuple,
+        denseScoresFromCache(cache, goldenCase.question, chunks),
+      ),
+    ]),
   );
   return evaluateGoldenSet(cases, outcomes, pinnedEvalTuple);
 }
@@ -328,9 +356,11 @@ export function runGoldenCase(
   goldenCase: GoldenCase,
   chunks: readonly CorpusChunk[],
   tuple: PinnedEvalTuple,
+  denseScores?: ReadonlyMap<string, number>,
 ): AnswerOutcome {
   const trace = retrieveChunks(goldenCase.question, chunks, {
     activeSnapshotId: tuple.corpusSnapshotId,
+    ...(denseScores === undefined ? {} : { denseScores }),
   });
   return generateAnswer({
     query: goldenCase.question,
