@@ -363,6 +363,26 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
     evidence in the snapshot is refused here, the way H-10's CRR question is on the other path. What
     the probe DID earn once assertions were put on its payload is the H-15 closure above: it proved
     the refusal was returning 8 chunks.
+  **The coupling to H-11 now runs both ways, measured 2026-08-06 from the fixture side.** H-11's
+  Option B (make the evidence gate semantic) was attempted and blocked HERE. Two findings from
+  `src/modules/retrieval/gate-separation.unit.test.ts` bear directly on this item:
+  - `max(lexical, cosine)` against one constant separates that probe set by `0.0180` — *identical* to
+    cosine alone — because the one probe where lexical is the larger score sits far inside its own
+    class. A probe set can therefore be fully green while the scale mix this item forbids is in place.
+    That is direct evidence for the claim above that the reverted `max(dense, ts_rank_cd)` copy was
+    not caught by measurement: on a set like this it would not have been.
+  - Real `bge-m3` cosine between a German question and unrelated German legal text runs `0.2971` to
+    `0.4751` on this corpus, with genuinely relevant text at `0.4931` to `0.7123`. The gap is `0.0180`
+    wide. Against that, applying the `0.3` coverage-ratio constant to a cosine scale — which is what
+    the served path does today — puts the bar essentially AT the unrelated-text floor: 5 of the 6
+    out-of-corpus probes clear `0.3` on cosine, and the sixth misses it by `0.0029`. The
+    `HashEmbeddingProvider` figures above
+    (`~0.26` noise floor, `0.691897` relevant, one negative score) understated this, because the hash
+    embedder's baseline is not a real embedder's baseline. **This is the first measurement of this
+    item's dense half against a real BGE-M3 endpoint**, and it makes the item worse, not better.
+  This item is unchanged in status (open) and its falsifier is untouched: nothing here refuses the
+  CRR question on `retrievePostgresChunks`. What changed is that the cost of leaving it open is now
+  quantified, and it blocks H-11 as well as being blocked by nothing.
   Found by the same cross-vendor audit as the H-10 retraction.
 - [x] H-13 (The required check is not load-flaky): no unit test spawns a subprocess under the unit
   project's 5s default timeout. Falsifier: run `pnpm check:fast` under CPU contention and watch a
@@ -431,23 +451,90 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
 - [ ] H-11 (The eval measures retrieval, not vocabulary): the golden set is answerable by the eval's
   retrieval path without being written in the corpus's exact inflections. Falsifier: rewording a
   case into natural German that a competent reader would use flips it from answered to refused.
-  Open, and it gates H-1. Both eval candidate passes (`dense` and `bm25`) run the same lexical
-  scorer over fixture text — no embedding is computed, despite the pinned tuple naming `bge-m3` —
-  and matching is exact-token with no stemming. In German that is brittle: `maschinenlesbare
+  Open, and it gates H-1. **Since 2026-07-17 the `dense` candidate pass ranks by real
+  `bge-m3@1024-v1` cosine (Option A, see below), so the "no embedding despite the pinned tuple"
+  complaint is closed — but that was the ranking half.** The `bm25` pass and, crucially, the evidence
+  gate (out-of-corpus refusal + citation filter) still score by the same lexical IDF coverage, and
+  matching there is exact-token with no stemming. In German that is brittle: `maschinenlesbare
   Kennzeichnung` does not match `maschinenlesbaren Format ... gekennzeichnet`. Two of the five
   existing cases had to be reworded into the law's own inflections to pass, which is the tell. A
   100-case set authored this way would measure whether questions echo the statute's wording, not
   whether retrieval works.
   German compounds are the sharpest edge of this and the H-10 fix exposed a third instance:
   "Wie muessen **KI-Ausgaben** gekennzeichnet werden?" cannot match a corpus that says "Ausgaben",
-  because nothing splits the compound. It scores `0.273` and is refused, though Article 50 plainly
-  answers it. It had been passing in `demo.integration.test.ts` purely on the additive bm25 length
-  bonus — the same artifact that let a banking question be answered with AI-Act text. Every question
-  that bonus was propping up is a question this path cannot actually retrieve: the demo chip
-  (2026-07-16, reworded), this test, and any of the 100 to come. That is the concrete cost of
-  leaving H-11 open, and the reason it gates H-1. Resolution is a design call (real embeddings on the eval path vs German
-  stemming vs an explicitly lexical harness with the limit stated); see `docs/eval-harness.md`
-  § What this harness measures.
+  because nothing splits the compound. It had been passing in `demo.integration.test.ts` purely on the
+  additive bm25 length bonus — the same artifact that let a banking question be answered with AI-Act
+  text. Every question that bonus was propping up is a question this path cannot actually retrieve:
+  the demo chip (2026-07-16, reworded), this test, and any of the 100 to come. That is the concrete
+  cost of leaving H-11 open, and the reason it gates H-1. **Resolved as a design call 2026-07-17:
+  Option A (real cached `bge-m3` for the dense RANKING pass) landed and verified — the eval now
+  retrieves with production's modality, offline and deterministic, and the pin is honest.** The gate
+  stays lexical, so this item's falsifier (a reworded question flipping answered→refused) is
+  unaddressed by A: it is a gate property, and reconciling the cosine scale into the evidence gate is
+  **Option B, coupled to H-14**. H-11 therefore stays open on the gate half; the ranking half is done.
+  See `docs/eval-harness.md` § What this harness measures, and `src/modules/eval/embedding-cache.ts` +
+  `scripts/generate-eval-embeddings.ts`.
+
+  **"It scores `0.273` and is refused" was false, and had been since H-15 recut the corpus.** On the
+  8-chunk corpus that probe scores `0.4583` and is ANSWERED. The figure came from the 14-chunk corpus:
+  IDF is computed over the active corpus, so every score in this entry moves when the corpus does, and
+  a figure written into prose does not. Same defect class as H-10's retracted margin sequence, in the
+  entry that describes it. Now pinned by
+  `retrieval/gate-separation.unit.test.ts` › "answers the compound-noun probe on the current corpus".
+
+  **Option B was attempted 2026-08-06 and is NOT closed. The measurements say the coupling to H-14 is
+  real, and they also say something worse about the current gate.** The probe set is
+  `eval/probes/gate-separation-v1.jsonl`: 10 questions Article 50 answers, phrased the way a German
+  reader phrases them, against 6 it does not, four of which are near negatives in the same regulatory
+  register. Every figure below is asserted in `src/modules/retrieval/gate-separation.unit.test.ts` at
+  the precision printed here.
+  - **The lexical gate is not mistuned. It is not a separating scale at all.** The worst answerable
+    probe scores `0.0951`; the best unanswerable one scores `0.2357`; the separation is `-0.1406`.
+    No threshold exists that answers all ten and refuses all six — not `0.3`, not any other value.
+    The gate refuses 5 of the 10 answerable questions, including **both** cases `f83d3e5` reworded
+    into the statute's inflections (`0.2453` and `0.0951`). Those two are the tell this entry always
+    named; they are now committed as probes rather than as an anecdote.
+  - **The two reworded cases were NOT restored to their natural wording in `eval/golden/v1.jsonl`,
+    because the gate still refuses them.** Restoring them would turn `pnpm eval` red. The golden set
+    keeps its statute-inflected wording, and that is exactly what "H-11 is open" means. Anyone reading
+    a green `pnpm eval` should read this bullet with it.
+  - **Cosine separates where the lexical scale cannot — by `0.0180`.** Worst answerable top-cosine
+    `0.4931`, best unanswerable `0.4751`. The window is bounded by the reworded law-enforcement
+    question on one side and by a hard negative on the other (a DSGVO breach-deadline question; the
+    Emotionserkennung chunk cites Verordnung (EU) 2016/679 by name while answering nothing about
+    deadlines). **A constant placed inside an `0.0180` window fitted to 16 hand-authored probes is not
+    calibration, it is the same luck H-14 already names on the Postgres path** ("the bar's placement
+    inside it is luck, not calibration"). Shipping it would move that defect onto the fixture path and
+    call it a fix.
+  - **Every per-query normalization that would avoid an absolute cosine constant fails**, measured,
+    because "just normalize it" is the obvious next suggestion: top−mean `-0.0119`, z-score `-0.8195`,
+    top/mean `-0.0685`, top−second `-0.0400`, mean `-0.0070`. All negative: each ranks a hard negative
+    above an answerable question.
+  - **This probe set cannot tell a scale-mixed gate from a scale-respecting one**, which is the H-14
+    coupling made concrete rather than asserted. `max(lexical, cosine)` against one constant separates
+    the classes by `0.0180` — identical to cosine alone — because the single probe where lexical is
+    the larger score (`0.7414` vs `0.6920`) sits far inside its own class and never touches the
+    window. The mix looks correct exactly where it is not tested. That is why the mix is not shipped
+    on the strength of these numbers.
+  - **The decisive objection is structural, not statistical.** Ranking could be cached because it is
+    an ordering over a FIXED corpus; the gate is a per-query decision, and the cache throws on a text
+    it has never seen. A cosine gate on the fixture path would therefore be a gate the served path
+    cannot run, while the served path's own gate is H-14 (three scales, one constant, still open). The
+    eval would then certify a gate nothing serves — this item's own charge, in a new form. **Option B
+    cannot be closed before H-14.** The repo's claim of a coupling is confirmed by measurement.
+  - **German stemming was tried and rejected on 2026-08-06** (the third resolution this entry has
+    listed since 2026-07-16). A Snowball-German stemmer with participle `ge-` stripping and
+    corpus-driven compound splitting fixed the compound probe (`0.4583` → `0.7768`) and left every
+    out-of-corpus probe refused — and moved the falsifier not at all: the two reworded cases went
+    `0.2453` → `0.2517` and `0.0951` → `0.1021`, both still far under the bar, and the lexical
+    separation stayed negative (`-0.0727`). It cannot work, because the gap is semantic, not
+    morphological: the statute says "offenlegen" where the reader says "kenntlich machen", and no
+    stemmer bridges that. It also cost margin (the worst answerable golden case went `0.031` above
+    the bar to `0.0128`) and its first probe already showed two morphology bugs (`gelten` → `lten`;
+    the documented `Kennzeichnung`/`gekennzeichnet` pair still missing). The code was deliberately
+    not landed, so **these five figures are the only ones in this entry not owned by a test** —
+    reproducing them means rewriting the module, and they are recorded as a dated one-off, not as a
+    maintained claim.
 - [x] H-2 (AI reliability): every model and embedding call retries 429 and 5xx with bounded
   exponential backoff plus jitter, under a per-call timeout, with a defined fallback.
   Falsifier: a simulated 429 crashes the call, or no retry path exists in the provider.

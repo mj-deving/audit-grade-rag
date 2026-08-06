@@ -21,8 +21,9 @@ The default pinned tuple for `pnpm eval` is, as `pnpm eval` reports it:
 - embedding model: `bge-m3@1024-v1`
 - corpus snapshot: `corpus-fixtures:v1`
 
-The `bge-m3` entry is a label, not a description of the eval path: no embedding is computed here (see
-above). `corpusSnapshotHash` is derived from the corpus content, not its label. It is a SHA-256 over
+The `bge-m3` entry names the model that ranks: since H-11 the dense candidate pass reads real
+`bge-m3@1024-v1` vectors from a committed cache (see below), so the pin is no longer a label over a
+lexical path. `corpusSnapshotHash` is derived from the corpus content, not its label. It is a SHA-256 over
 a canonical-JSON manifest of every chunk's id paired with the SHA-256 of its text, sorted so read
 order cannot change it and folded with the chunk count. A third party can recompute it from the
 published corpus, and it moves when any corpus byte changes. Closed as H-12 in `docs/HARDENING.md`;
@@ -40,13 +41,36 @@ answer contract, end to end over a fixed corpus.
 chunk markers it finds in the prompt. Groundedness here means "every claim carries a citation", not
 "the claim is true".
 
-**Retrieval on this path is lexical, not dense.** Both the `dense` and `bm25` candidate passes run
-the same IDF-weighted term-overlap scorer over fixture text; no embedding is computed, despite the
-pinned tuple naming `bge-m3`. Matching is exact-token with umlaut folding and **no stemming**, which
-bites hard in German: a question asking about `maschinenlesbare Kennzeichnung` does not match text
-reading `maschinenlesbaren Format ... gekennzeichnet`. Golden questions are therefore written to be
-lexically fair to this scorer. That is a real limit on what a passing score proves — it is closer to
-"the ranker orders a known-answerable question correctly" than "retrieval works".
+**Retrieval ranking is dense; the evidence gate is not.** Since H-11 (Option A) the `dense` candidate
+pass ranks by real `bge-m3@1024-v1` cosine similarity, read from a committed cache
+(`eval/embeddings/bge-m3-v1.json`) computed once at author time over the fixed corpus and golden set
+against a real endpoint. So the eval ranks with the same modality production retrieves with, still
+offline and deterministic, and the pinned `bge-m3` entry names the model that ranks. Regenerate the
+cache with `scripts/generate-eval-embeddings.ts` when the corpus or golden set changes; a text whose
+bytes changed is a cache MISS the loader throws on, never a silent lexical fallback.
+
+What stayed lexical is the **evidence gate**. The out-of-corpus refusal and the citation filter read
+the IDF-weighted coverage score alone — the one scale `0.3` is calibrated on — so no cosine score can
+open a refusal or admit a chunk the lexical bar rejected (`retrieval/dense-eval.unit.test.ts` asserts
+this against an adversarial dense map). Reconciling the two scales into one gate, so the refusal
+decision is also semantic, is the deferred Option B tracked with H-14. The gate's matching is still
+exact-token with umlaut folding and **no stemming**, so the mixed-language erosion documented below is
+a property of the gate, not of the ranking. On the current 8-chunk corpus, where every answerable
+case has at most `topK` chunks clearing the bar, dense ranking reorders candidates without changing
+which chunks are cited, so it does not move the aggregate score; its value here is modality fidelity
+and a semantically-ordered candidate list (`eval/dense-eval-semantic.unit.test.ts`), not a score bump.
+
+**A green `pnpm eval` does not mean the gate can read natural German, and the golden set's wording is
+part of why it is green.** Two of the five cases are phrased in the statute's own inflections because
+the gate refuses them otherwise, and they were left that way on 2026-08-06 when Option B was attempted
+and did not close: restoring their natural wording turns this eval red. Measured on
+`eval/probes/gate-separation-v1.jsonl` (16 probes, asserted in
+`src/modules/retrieval/gate-separation.unit.test.ts`), the gate refuses 5 of 10 questions Article 50
+answers, and its scale is not merely mistuned but non-separating — the worst answerable probe scores
+`0.0951` against the best unanswerable one at `0.2357`, so no threshold satisfies both. Cosine does
+separate the two classes, by `0.0180`, which is too narrow a window to place a constant in honestly
+and is in any case unavailable to a per-query gate from a cache keyed on texts computed at author
+time. Full reasoning, including the rejected German-stemming attempt, is in `docs/HARDENING.md` H-11.
 
 **Citation accuracy used to be weak because `topK` outran the corpus, and this section said so before
 anyone acted on it.** `topK` is 8, and against the old 14-chunk corpus the provider cited more than
