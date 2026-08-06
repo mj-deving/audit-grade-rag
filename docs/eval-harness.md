@@ -64,10 +64,10 @@ and a semantically-ordered candidate list (`eval/dense-eval-semantic.unit.test.t
 part of why it is green.** Two of the five cases are phrased in the statute's own inflections because
 the gate refuses them otherwise, and they were left that way on 2026-08-06 when Option B was attempted
 and did not close: restoring their natural wording turns this eval red. Measured on
-`eval/probes/gate-separation-v1.jsonl` (16 probes, asserted in
-`src/modules/retrieval/gate-separation.unit.test.ts`), the gate refuses 5 of 10 questions Article 50
+`eval/probes/gate-separation-v1.jsonl` (18 probes, asserted in
+`src/modules/retrieval/gate-separation.unit.test.ts`), the gate refuses 7 of 12 questions Article 50
 answers, and its scale is not merely mistuned but non-separating — the worst answerable probe scores
-`0.0951` against the best unanswerable one at `0.2357`, so no threshold satisfies both. Cosine does
+`0.0874` against the best unanswerable one at `0.2357`, so no threshold satisfies both. Cosine does
 separate the two classes, by `0.0180`, which is too narrow a window to place a constant in honestly
 and is in any case unavailable to a per-query gate from a cache keyed on texts computed at author
 time. Full reasoning, including the rejected German-stemming attempt, is in `docs/HARDENING.md` H-11.
