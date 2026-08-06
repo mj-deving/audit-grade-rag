@@ -481,17 +481,24 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
   a figure written into prose does not. Same defect class as H-10's retracted margin sequence, in the
   entry that describes it. Now pinned by
   `retrieval/gate-separation.unit.test.ts` › "answers the compound-noun probe on the current corpus".
+  **Two comments in `src/app/demo.integration.test.ts` carried the same superseded belief** and are
+  corrected in the same commit. They now quote no figure at all and point at the probe file instead,
+  because the reason the claim rotted is that a comment is owned by nothing. Two questions about the
+  same duty that the gate genuinely DOES refuse — `Welche Kennzeichnungspflicht gilt fuer KI-Ausgaben?`
+  (`0.0874`) and `Unterliegen Systemausgaben einer Kennzeichnungspflicht?` (`0.1755`) — are in the
+  probe set as `in-marking-duty-compound` and `in-marking-duty-systemausgaben`, so anyone reaching for
+  a compound-noun acceptance probe reaches for one that fails today rather than one that passes.
 
   **Option B was attempted 2026-08-06 and is NOT closed. The measurements say the coupling to H-14 is
   real, and they also say something worse about the current gate.** The probe set is
-  `eval/probes/gate-separation-v1.jsonl`: 10 questions Article 50 answers, phrased the way a German
+  `eval/probes/gate-separation-v1.jsonl`: 12 questions Article 50 answers, phrased the way a German
   reader phrases them, against 6 it does not, four of which are near negatives in the same regulatory
   register. Every figure below is asserted in `src/modules/retrieval/gate-separation.unit.test.ts` at
   the precision printed here.
   - **The lexical gate is not mistuned. It is not a separating scale at all.** The worst answerable
-    probe scores `0.0951`; the best unanswerable one scores `0.2357`; the separation is `-0.1406`.
-    No threshold exists that answers all ten and refuses all six — not `0.3`, not any other value.
-    The gate refuses 5 of the 10 answerable questions, including **both** cases `f83d3e5` reworded
+    probe scores `0.0874`; the best unanswerable one scores `0.2357`; the separation is `-0.1483`.
+    No threshold exists that answers all twelve and refuses all six — not `0.3`, not any other value.
+    The gate refuses 7 of the 12 answerable questions, including **both** cases `f83d3e5` reworded
     into the statute's inflections (`0.2453` and `0.0951`). Those two are the tell this entry always
     named; they are now committed as probes rather than as an anecdote.
   - **The two reworded cases were NOT restored to their natural wording in `eval/golden/v1.jsonl`,
@@ -502,7 +509,7 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
     `0.4931`, best unanswerable `0.4751`. The window is bounded by the reworded law-enforcement
     question on one side and by a hard negative on the other (a DSGVO breach-deadline question; the
     Emotionserkennung chunk cites Verordnung (EU) 2016/679 by name while answering nothing about
-    deadlines). **A constant placed inside an `0.0180` window fitted to 16 hand-authored probes is not
+    deadlines). **A constant placed inside an `0.0180` window fitted to 18 hand-authored probes is not
     calibration, it is the same luck H-14 already names on the Postgres path** ("the bar's placement
     inside it is luck, not calibration"). Shipping it would move that defect onto the fixture path and
     call it a fix.
@@ -510,6 +517,11 @@ Each names the probe that falsifies it. Closed only on tool evidence of the righ
     because "just normalize it" is the obvious next suggestion: top−mean `-0.0119`, z-score `-0.8195`,
     top/mean `-0.0685`, top−second `-0.0400`, mean `-0.0070`. All negative: each ranks a hard negative
     above an answerable question.
+  - **The two scales disagree hardest on the question that motivated this entry.**
+    `Welche Kennzeichnungspflicht gilt fuer KI-Ausgaben?` is the WORST answerable probe lexically
+    (`0.0874`, below four of the six out-of-corpus probes) and sits comfortably inside the answerable
+    band on cosine (`0.6184`). A gate reading the lexical score cannot tell that question from a
+    question about the Handelsgesetzbuch.
   - **This probe set cannot tell a scale-mixed gate from a scale-respecting one**, which is the H-14
     coupling made concrete rather than asserted. `max(lexical, cosine)` against one constant separates
     the classes by `0.0180` — identical to cosine alone — because the single probe where lexical is

@@ -15,7 +15,7 @@ const activeSnapshotId = pinnedEvalTuple.corpusSnapshotId;
  *
  * The falsifier is a GATE property: rewording a case into natural German that a competent reader
  * would use must not flip it from answered to refused. These probes measure whether ANY threshold on
- * the gate's scale could satisfy that, by scoring 10 questions Article 50 answers against 6 it does
+ * the gate's scale could satisfy that, by scoring 12 questions Article 50 answers against 6 it does
  * not. The test asserts the wrong answers the current gate gives, on purpose — the numbers are the
  * evidence for the entry in `docs/HARDENING.md`, and every figure quoted there is pinned here at the
  * precision it is published at.
@@ -40,7 +40,7 @@ async function lexicalGateScores(
 }
 
 describe("H-11: the lexical evidence gate cannot separate natural German from out-of-corpus", () => {
-  it("refuses 5 of the 10 questions Article 50 answers, including both cases that were reworded to pass", async () => {
+  it("refuses 7 of the 12 questions Article 50 answers, including both cases that were reworded to pass", async () => {
     const probes = await loadGateProbes();
     const scores = await lexicalGateScores(probes);
     const refusedButAnswerable = probes
@@ -54,6 +54,8 @@ describe("H-11: the lexical evidence gate cannot separate natural German from ou
       "in-chatbot",
       "in-deepfake",
       "in-emotion",
+      "in-marking-duty-compound",
+      "in-marking-duty-systemausgaben",
     ]);
   });
 
@@ -80,9 +82,9 @@ describe("H-11: the lexical evidence gate cannot separate natural German from ou
 
     expect(worstIn).toBeLessThan(bestOut);
     // The three figures docs/HARDENING.md publishes for this, at the precision it publishes them.
-    expect(worstIn).toBeCloseTo(0.0951, 4);
+    expect(worstIn).toBeCloseTo(0.0874, 4);
     expect(bestOut).toBeCloseTo(0.2357, 4);
-    expect(worstIn - bestOut).toBeCloseTo(-0.1406, 4);
+    expect(worstIn - bestOut).toBeCloseTo(-0.1483, 4);
   });
 
   // The compound-noun probe H-11 quotes. The entry claimed it scores 0.273 and is refused; on the
@@ -131,6 +133,11 @@ describe("H-11: cosine separates where the lexical scale cannot, by too little t
     // And the window is bounded by exactly these two probes, which is why the entry names them.
     expect(topCosine.get("in-reworded-contradictory-natural")).toBeCloseTo(worstIn, 10);
     expect(topCosine.get("out-dsgvo-breach")).toBeCloseTo(bestOut, 10);
+
+    // The sharpest single illustration that the two scales disagree about the same question. This
+    // probe is the WORST answerable one lexically (`0.0874`, under four of the six out-of-corpus
+    // probes) and is comfortably inside the answerable band on cosine.
+    expect(topCosine.get("in-marking-duty-compound")).toBeCloseTo(0.6184, 4);
   });
 });
 
@@ -188,7 +195,7 @@ describe("H-14: the 0.3 constant, measured against a real embedder's cosine scal
         const sd = Math.sqrt(mean(v.map((x) => (x - m) ** 2)));
         return sd === 0 ? 0 : ((v[0] ?? 0) - m) / sd;
       }),
-    ).toBeCloseTo(-0.8195, 4);
+    ).toBeCloseTo(-0.8916, 4);
     expect(separation((v) => (v[0] ?? 0) / mean(v))).toBeCloseTo(-0.0685, 4);
     expect(separation((v) => (v[0] ?? 0) - (v[1] ?? 0))).toBeCloseTo(-0.04, 4);
     expect(separation(mean)).toBeCloseTo(-0.007, 4);
