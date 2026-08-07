@@ -41,7 +41,7 @@
     "hooks:install": "lefthook install"
   },
   "keywords": [],
-  "author": "",
+  "author": "mjdeving",
   "license": "Apache-2.0",
   "packageManager": "pnpm@9.15.9",
   "knip": {
