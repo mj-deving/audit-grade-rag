@@ -107,6 +107,16 @@
     "pg": "^8.20.0",
     "zod": "^4.0.0"
   },
+  "pnpm": {
+    "comment": "Security overrides for transitive advisories. Each pin stays inside the major the parent already requested, so no consumer sees a breaking change. Remove an entry once every parent resolves at or above the fixed version on its own.",
+    "overrides": {
+      "brace-expansion@^1.1.7": "^1.1.18",
+      "brace-expansion@^5.0.5": "^5.0.9",
+      "fast-uri": "^3.1.5",
+      "ip-address": "^10.3.1",
+      "js-yaml": "^4.3.1"
+    }
+  },
   "trustedDependencies": [
     "protobufjs"
   ]
