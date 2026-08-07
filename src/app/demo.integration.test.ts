@@ -28,8 +28,13 @@ describe("public demo route", () => {
     // Asserting only that the page CONTAINS the evidence does not prove it was answered: the
     // refusal page renders the rejected candidates too, so every `toContain` below passes on a
     // refusal. This test asked "Wie muessen KI-Ausgaben gekennzeichnet werden?" and stayed green
-    // while the route refused it (H-11: the corpus says "Ausgaben", nothing splits the compound).
-    // So the outcome is now asserted explicitly, and the question is one retrieval can see.
+    // while the route refused it. So the outcome is now asserted explicitly.
+    //
+    // That question is no longer refused — H-15's corpus recut moved every IDF weight, and it now
+    // clears the bar (on `wie` and `gekennzeichnet`, not on the compound, which is still unmatched).
+    // No figure is quoted here on purpose: this comment carried `0.273` for three weeks after it
+    // stopped being true, because a number in a comment is owned by nothing. The gate scores for the
+    // whole compound-marking family are asserted in `retrieval/gate-separation.unit.test.ts`.
     const response = await get(
       `/demo?q=${encodeURIComponent("Wie muessen synthetische Inhalte gekennzeichnet werden?")}`,
     );
@@ -51,11 +56,16 @@ describe("public demo route", () => {
 
   it("replays a ledger row byte-for-byte and verifies the whole chain", async () => {
     // This test is about replay, so it just needs an answered row. It used to ask "Wie muessen
-    // KI-Ausgaben gekennzeichnet werden?", which retrieval cannot actually see: the corpus says
-    // "Ausgaben", the question says the compound "KI-Ausgaben", and this path does no decompounding
-    // (H-11). It scored 0.273 and is refused on the evidence. It only ever passed because the old
-    // additive bm25 length bonus carried it over the 0.3 line — the same artifact that answered a
-    // banking question with AI-Act text (H-10). Third question found propped up by that bonus.
+    // KI-Ausgaben gekennzeichnet werden?", which only ever passed because the old additive bm25
+    // length bonus carried it over the bar — the same artifact that answered a banking question with
+    // AI-Act text (H-10). Third question found propped up by that bonus.
+    //
+    // The claim this comment used to make about that question ("it scored 0.273 and is refused") was
+    // true when written and false by the time anyone read it: H-15 recut the corpus and it is now
+    // answered. The compound is still unmatched, which is the part that did not change. Questions
+    // about this duty that the gate genuinely refuses are `in-marking-duty-compound` and
+    // `in-marking-duty-systemausgaben` in `eval/probes/gate-separation-v1.jsonl`, where the scores
+    // are asserted rather than narrated.
     const entry = demo.ask("Wie muessen synthetische Inhalte gekennzeichnet werden?").entry;
     const response = await app.fetch(
       new Request("http://demo.local/demo/replay", {

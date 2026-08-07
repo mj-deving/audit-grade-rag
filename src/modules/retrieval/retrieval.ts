@@ -4,6 +4,12 @@ import { foldGerman } from "../../lib/german.js";
 export type RetrievalOptions = {
   readonly topK?: number;
   readonly activeSnapshotId: string;
+  // H-11 Option A: when present, the dense pass ranks chunks by these precomputed cosine scores
+  // (chunkId -> cosine(query, chunk), read from the committed BGE-M3 embedding cache) instead of the
+  // lexical fallback scorer. The map is the caller's responsibility to build completely; a chunk
+  // absent from it scores 0. Cosine lives OUTSIDE this ranker so retrieval.ts stays a pure ranker
+  // and the evidence gate below can never read a cosine score. Absent => unchanged lexical behavior.
+  readonly denseScores?: ReadonlyMap<string, number>;
 };
 
 export type RetrievalTrace = {
@@ -49,13 +55,14 @@ export function retrieveChunks(
     (chunk) => chunk.corpusSnapshotId === options.activeSnapshotId,
   );
   const idf = inverseDocumentFrequencies(activeChunks);
-  const vectorCandidates = rankCandidates(query, activeChunks, "dense", idf).slice(
-    0,
-    candidateLimit,
-  );
+  const vectorCandidates = (
+    options.denseScores === undefined
+      ? rankCandidates(query, activeChunks, "dense", idf)
+      : rankByDenseScores(activeChunks, options.denseScores)
+  ).slice(0, candidateLimit);
   const bm25Candidates = rankCandidates(query, activeChunks, "bm25", idf).slice(0, candidateLimit);
   const mergedCandidates = reciprocalRankFusion(vectorCandidates, bm25Candidates);
-  const evidenceScores = bestEvidenceScores(vectorCandidates, bm25Candidates);
+  const evidenceScores = bestEvidenceScores(bm25Candidates);
   const bestEvidenceScore = Math.max(0, ...evidenceScores.values());
   // A cited chunk clears the same bar that decides whether evidence exists at all. `0.3` used to be a
   // QUERY-level gate only — it asked "is there any evidence?" of the best candidate, while topK came
@@ -78,22 +85,29 @@ export function retrieveChunks(
   };
 }
 
-// The evidence score of a chunk is the best score either ranker gave it, which is exactly what the
-// out-of-corpus gate reads via its max. Keeping one function for both means the gate and the citation
-// filter can never drift apart into two notions of "evidence".
+// The evidence score of a chunk is its LEXICAL IDF-coverage score — the bm25 pass only. That is the
+// one scale `evidenceThreshold` (0.3) is calibrated against, and it is what decides both whether
+// evidence exists (the refusal gate) and which chunks may be cited.
 //
-// Deliberately NOT exported. It was, briefly, so `postgres-retrieval.ts` could filter citations on
-// the same definition — which sounds like consistency and is the opposite: that path's two rankers
-// score on ranges this bar was never calibrated for, so `max(dense, ts_rank_cd)` compared against
-// `0.3` there sorts chunks by an arithmetic accident (`ts_rank_cd` is an unbounded cover-density
-// rank; `0.3` here means 30% IDF-weighted coverage). Sharing the FUNCTION would have hidden that the
+// It used to read `max(dense, bm25)`. On a purely lexical setup that was identical to reading bm25
+// alone: bm25's score is `min(1, base + base*density)` with `density >= 0`, so it is >= the dense
+// pass's `min(1, base)` for every chunk, and the per-chunk max was always the bm25 value. So dropping
+// the dense pass here changes NOTHING while both passes are lexical (the retrieval sweep proves it by
+// staying green). It changes everything once the dense pass carries real BGE-M3 cosine scores (H-11
+// Option A): cosine lives on a different scale than a coverage ratio, and letting it into this max
+// would sort chunks past the gate by an arithmetic accident — the exact scale-mixing hazard the
+// postgres path documents. Cosine may reorder candidates (that is the point of Option A); it may
+// never move the refusal decision or admit a chunk the lexical bar rejected. Reconciling the two
+// scales into one gate is Option B, deferred with H-14.
+//
+// Deliberately NOT exported: `postgres-retrieval.ts` scores on ranges this bar was never calibrated
+// for (`ts_rank_cd` is an unbounded cover-density rank), so sharing the FUNCTION would hide that the
 // two paths do not share the SCALE. See H-14.
 function bestEvidenceScores(
-  vectorCandidates: readonly RetrievedChunk[],
   bm25Candidates: readonly RetrievedChunk[],
 ): ReadonlyMap<string, number> {
   const scores = new Map<string, number>();
-  for (const chunk of [...vectorCandidates, ...bm25Candidates]) {
+  for (const chunk of bm25Candidates) {
     scores.set(chunk.chunkId, Math.max(scores.get(chunk.chunkId) ?? 0, chunk.retrievalScore));
   }
   return scores;
@@ -162,6 +176,24 @@ export function inverseDocumentFrequencies(chunks: readonly CorpusChunk[]): Corp
 // little instead of flipping negative and rewarding chunks that lack it.
 function idfOf(documentFrequency: number, totalChunks: number): number {
   return Math.log(1 + (totalChunks - documentFrequency + 0.5) / (documentFrequency + 0.5));
+}
+
+// H-11 Option A: rank the dense pass by precomputed cosine scores from the embedding cache. A chunk
+// absent from the map scores 0 — the caller (eval / demo) builds the map over exactly the active
+// chunks from a cache that throws on a miss, so a 0 here means "caller passed an incomplete map", not
+// "silent lexical fallback". These scores drive candidate order and thus RRF rank; they never reach
+// the evidence gate, which reads the bm25 pass alone.
+function rankByDenseScores(
+  chunks: readonly CorpusChunk[],
+  denseScores: ReadonlyMap<string, number>,
+): readonly RetrievedChunk[] {
+  return chunks
+    .map((chunk) => ({
+      ...chunk,
+      retrievalScore: roundScore(denseScores.get(chunk.chunkId) ?? 0),
+      retrievalMethod: "dense" as const,
+    }))
+    .sort(compareRetrievedChunks);
 }
 
 function rankCandidates(
