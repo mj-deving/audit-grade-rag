@@ -281,4 +281,6 @@ proves bit-equal replay support.
 
 ## License
 
-Licensed under the [Apache License 2.0](LICENSE).
+Licensed under the [Apache License 2.0](LICENSE). The copyright holder is
+declared in [NOTICE](NOTICE), which Apache-2.0 section 4(d) requires
+redistributions to carry forward.
